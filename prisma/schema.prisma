@@ -1,0 +1,334 @@
+// Phase 1 data model for AI Project Optimizer.
+// Records exist so later phases can plan work, choose models, and track cost.
+// This schema does not connect to GitHub or to model vendors.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum TaskStatus {
+  PENDING
+  READY
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AttemptStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum VerificationStatus {
+  PENDING
+  PASSED
+  FAILED
+  SKIPPED
+}
+
+enum PullRequestStatus {
+  DRAFT
+  OPEN
+  MERGED
+  CLOSED
+}
+
+enum BudgetPeriod {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+  PROJECT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  SYSTEM
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects  Project[]
+  auditLogs AuditLog[]
+
+  @@index([createdAt])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  userId      String
+  name        String
+  slug        String
+  description String?
+  objective   String?       @db.Text
+  status      ProjectStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositories Repository[]
+  tasks        Task[]
+  budgets      Budget[]
+  pullRequests PullRequest[]
+  costRecords  CostRecord[]
+  auditLogs    AuditLog[]
+
+  @@unique([userId, slug])
+  @@index([userId, status])
+  @@index([createdAt])
+}
+
+model Repository {
+  id            String   @id @default(cuid())
+  projectId     String
+  name          String
+  url           String?
+  defaultBranch String   @default("main")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pullRequests PullRequest[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+model Provider {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  models Model[]
+
+  @@index([enabled])
+}
+
+model Model {
+  id                    String   @id @default(cuid())
+  providerId            String
+  name                  String
+  slug                  String
+  contextWindow         Int?
+  inputPricePerMillion  Decimal? @db.Decimal(12, 6)
+  outputPricePerMillion Decimal? @db.Decimal(12, 6)
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  provider    Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  decisions   ModelDecision[]
+  attempts    TaskAttempt[]
+  tokenUsages TokenUsage[]
+  costRecords CostRecord[]
+
+  @@unique([providerId, slug])
+  @@index([providerId])
+  @@index([enabled])
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  projectId   String
+  title       String
+  description String?      @db.Text
+  status      TaskStatus   @default(PENDING)
+  priority    TaskPriority @default(MEDIUM)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependencies  TaskDependency[] @relation("DependencySource")
+  dependents    TaskDependency[] @relation("DependencyTarget")
+  attempts      TaskAttempt[]
+  decisions     ModelDecision[]
+  verifications Verification[]
+
+  @@index([projectId, status])
+  @@index([projectId, priority])
+  @@index([createdAt])
+}
+
+model TaskDependency {
+  id              String   @id @default(cuid())
+  taskId          String
+  dependsOnTaskId String
+  createdAt       DateTime @default(now())
+
+  task      Task @relation("DependencySource", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn Task @relation("DependencyTarget", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnTaskId])
+  @@index([dependsOnTaskId])
+}
+
+model TaskAttempt {
+  id           String        @id @default(cuid())
+  taskId       String
+  modelId      String?
+  status       AttemptStatus @default(QUEUED)
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  errorMessage String?       @db.Text
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  task          Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  model         Model?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  verifications Verification[]
+  tokenUsages   TokenUsage[]
+  costRecords   CostRecord[]
+
+  @@index([taskId, status])
+  @@index([modelId])
+  @@index([createdAt])
+}
+
+model ModelDecision {
+  id        String   @id @default(cuid())
+  taskId    String
+  modelId   String
+  reason    String   @db.Text
+  createdAt DateTime @default(now())
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  model Model @relation(fields: [modelId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, createdAt])
+  @@index([modelId])
+}
+
+model Verification {
+  id            String             @id @default(cuid())
+  taskId        String
+  taskAttemptId String?
+  status        VerificationStatus @default(PENDING)
+  notes         String?            @db.Text
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  task    Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  attempt TaskAttempt? @relation(fields: [taskAttemptId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, status])
+  @@index([taskAttemptId])
+}
+
+model TokenUsage {
+  id            String   @id @default(cuid())
+  taskAttemptId String
+  modelId       String
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  attempt TaskAttempt @relation(fields: [taskAttemptId], references: [id], onDelete: Cascade)
+  model   Model       @relation(fields: [modelId], references: [id], onDelete: Restrict)
+
+  @@index([taskAttemptId])
+  @@index([modelId, createdAt])
+}
+
+model CostRecord {
+  id            String   @id @default(cuid())
+  projectId     String
+  taskAttemptId String?
+  modelId       String?
+  amount        Decimal  @db.Decimal(14, 6)
+  currency      String   @default("USD")
+  createdAt     DateTime @default(now())
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  attempt TaskAttempt? @relation(fields: [taskAttemptId], references: [id], onDelete: SetNull)
+  model   Model?       @relation(fields: [modelId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([modelId])
+  @@index([currency])
+}
+
+model Budget {
+  id          String       @id @default(cuid())
+  projectId   String
+  limitAmount Decimal      @db.Decimal(14, 6)
+  currency    String       @default("USD")
+  period      BudgetPeriod @default(PROJECT)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, period])
+}
+
+model PullRequest {
+  id             String            @id @default(cuid())
+  projectId      String
+  repositoryId   String?
+  title          String
+  url            String?
+  externalNumber Int?
+  status         PullRequestStatus @default(DRAFT)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repository Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([repositoryId])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  projectId  String?
+  action     AuditAction
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
