@@ -1,18 +1,17 @@
 # AI Project Optimizer
 
-Phase 1 is the application foundation for a workspace that will later plan a development objective, choose a model per task, and track cost per successful result.
-
-This phase stores that structure and serves the product shells. It does not call model vendors, route work, run an agent, or open GitHub pull requests.
+Phase 2 connects a GitHub account and lets you attach a repository to a project. The workspace still does not call model vendors, route work, push commits, or open pull requests.
 
 ## Architecture
 
 Next.js (App Router) renders the workspace. Server Components read PostgreSQL through Prisma. Client Components are limited to navigation, dialogs, and retry actions. Secrets stay in server environment variables and are never passed to the browser.
 
 ```text
-src/app                routes: dashboard, projects, models, costs, activity, settings
+src/app                routes: dashboard, projects, github, models, costs, activity, settings
 src/app/api/health     process health, including database status
-src/server             request-time queries and the create-project server action
-src/lib                env, validation, errors, logging, database client
+src/app/api/github     OAuth start and callback. Tokens never reach the browser.
+src/server             request-time queries, project actions, and the GitHub store
+src/lib                env, validation, errors, logging, encryption, GitHub API client
 prisma                 schema and the initial migration
 ```
 
@@ -25,9 +24,9 @@ prisma                 schema and the initial migration
 | Logging | JSON logs. Connection strings and secret-shaped fields are redacted. |
 | UI | Shared shell with dashboard, projects, models, costs, activity, and settings. Data regions show loading, empty, unconfigured, and error states. |
 
-The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `Task`, `TaskDependency`, `TaskAttempt`, `ModelDecision`, `Verification`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, and `AuditLog`.
+The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `Task`, `TaskDependency`, `TaskAttempt`, `ModelDecision`, `Verification`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, `AuditLog`, `GithubAccount`, and `ConnectedRepository`.
 
-There is no authentication in this phase. New projects are owned by a local operator record (`local-operator@localhost.invalid`) created on first write.
+GitHub access tokens are encrypted with AES-256-GCM before they are written. Queries that render pages select the public account fields only. The first successful connection attaches to the local operator (`local-operator@localhost.invalid`) when that record has no GitHub account yet. A second GitHub account gets its own user. Repository lists and selection are filtered by that user, including when a store returns another user's row.
 
 `GET /api/health` returns the process status. `checks.database` is `unconfigured`, `ok`, or `unavailable`. The HTTP status is 200 unless the database is configured and cannot be reached, in which case it is 503 and `status` is `degraded`.
 
@@ -53,6 +52,11 @@ Copy `.env.example` to `.env`. Do not commit `.env`.
 | --- | --- | --- |
 | `DATABASE_URL` | No | PostgreSQL connection string. Omit it to run in local mode. |
 | `LOG_LEVEL` | No | `debug`, `info`, `warn`, or `error`. Defaults to `info`. |
+| `GITHUB_CLIENT_ID` | No | OAuth app client id. Omit, along with the other GitHub variables, to leave GitHub disconnected. |
+| `GITHUB_CLIENT_SECRET` | No | OAuth app client secret. Server only. |
+| `GITHUB_CALLBACK_URL` | No | Defaults to `http://127.0.0.1:43123/api/github/callback`. |
+| `APP_SECRET` | No | Signs the OAuth state cookie and the session cookie. At least 32 characters. |
+| `TOKEN_ENCRYPTION_KEY` | No | 32 bytes, base64-encoded. Encrypts the GitHub access token at rest. |
 
 `NODE_ENV` is set by Next.js. Do not put secrets in `NEXT_PUBLIC_*` variables. This app does not define any.
 
@@ -97,7 +101,7 @@ npm start           # production server on port 43123
 
 ## Tests
 
-Vitest covers database initialization (schema, migration, client fallback, unreachable database), environment validation, validation and formatting utilities, redaction, public error responses, and `GET /api/health`.
+Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, and disconnect.
 
 ```bash
 npm test

@@ -20,7 +20,7 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Dashboard"
-        description="This phase stores the shape of the work: projects, tasks, model choices, checks, and cost. It does not call a model, route a task, or open a pull request."
+        description="Connect GitHub and keep the shape of the work: projects, repositories, tasks, and cost. This phase does not call a model, push code, or open a pull request."
       />
       <Suspense fallback={<PanelSkeleton cards={4} />}>
         <DashboardPanel />

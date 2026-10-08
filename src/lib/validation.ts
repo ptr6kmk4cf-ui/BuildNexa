@@ -38,6 +38,12 @@ export const createProjectInputSchema = z.object({
   ),
   description: optionalFormText(500, "Description"),
   objective: optionalFormText(4000, "Objective"),
+  repositoryId: z.preprocess((value) => {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }, z.cuid("Choose a connected repository.").optional()),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;

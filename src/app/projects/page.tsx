@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
+import { listRepositoryOptions } from "@/server/github";
 import { PageHeader } from "@/components/layout/page-header";
 import { ProjectStatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
@@ -17,14 +18,23 @@ export default function ProjectsPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Projects"
-        description="Each project holds an objective. Repositories, tasks, budgets, and pull requests hang off that record once they exist."
-        actions={<CreateProjectDialog />}
+        description="Each project holds an objective. A connected GitHub repository can be attached when you create it. Nothing is pushed from this screen."
+        actions={
+          <Suspense fallback={null}>
+            <NewProjectAction />
+          </Suspense>
+        }
       />
       <Suspense fallback={<PanelSkeleton cards={2} />}>
         <ProjectList />
       </Suspense>
     </>
   );
+}
+
+async function NewProjectAction() {
+  const repositories = await listRepositoryOptions();
+  return <CreateProjectDialog repositories={repositories} />;
 }
 
 async function ProjectList() {

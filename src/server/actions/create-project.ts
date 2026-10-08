@@ -8,7 +8,9 @@ import {
   type CreateProjectFieldErrors,
   type CreateProjectFormState,
 } from "@/lib/project-form";
+import { projectLinkFromRepository } from "@/lib/github/types";
 import { createProjectInputSchema, parseInput } from "@/lib/validation";
+import { selectCurrentUsersRepository } from "@/server/github";
 import { createProjectRecord } from "@/server/workspace";
 
 function fieldErrorsFromDetails(details: unknown): CreateProjectFieldErrors {
@@ -26,6 +28,9 @@ function fieldErrorsFromDetails(details: unknown): CreateProjectFieldErrors {
     ...(Array.isArray(record.objective)
       ? { objective: record.objective.filter((item) => typeof item === "string") }
       : {}),
+    ...(Array.isArray(record.repositoryId)
+      ? { repositoryId: record.repositoryId.filter((item) => typeof item === "string") }
+      : {}),
   };
 }
 
@@ -38,8 +43,20 @@ export async function createProject(
       name: formData.get("name"),
       description: formData.get("description"),
       objective: formData.get("objective"),
+      repositoryId: formData.get("repositoryId"),
     });
-    const saved = await createProjectRecord(input);
+    const link = input.repositoryId
+      ? await selectCurrentUsersRepository(input.repositoryId)
+      : null;
+    if (link && !link.ok) {
+      return { ...initialCreateProjectFormState, status: "error", message: link.message };
+    }
+    const saved = await createProjectRecord(
+      input,
+      link?.ok
+        ? { userId: link.userId, repository: projectLinkFromRepository(link.repository) }
+        : undefined,
+    );
     if (!saved.ok) {
       return { ...initialCreateProjectFormState, status: "error", message: saved.message };
     }

@@ -7,20 +7,37 @@ import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatTimestamp, formatUsd } from "@/lib/format";
 import { labelBudgetPeriod, labelPullRequestStatus, labelTaskPriority } from "@/lib/labels";
+import { AttachRepositoryForm } from "@/components/github/attach-repository-form";
+import { githubNotice } from "@/lib/github/messages";
+import { listRepositoryOptions } from "@/server/github";
 import { getProject, type ProjectDetail } from "@/server/workspace";
 
 export const metadata = { title: "Project" };
 
-export default function ProjectPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default function ProjectPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ notice?: string }>;
+}) {
   return (
     <Suspense fallback={<PanelSkeleton cards={4} />}>
-      <ProjectView params={params} />
+      <ProjectView params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function ProjectView({ params }: { params: Promise<{ projectId: string }> }) {
+async function ProjectView({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ notice?: string }>;
+}) {
   const { projectId } = await params;
+  const query = await searchParams;
+  const notice = githubNotice(query.notice);
   const result = await getProject(projectId);
   if (result.status === "ready" && result.data === null) {
     return <MissingProject />;
@@ -28,12 +45,19 @@ async function ProjectView({ params }: { params: Promise<{ projectId: string }> 
 
   return (
     <WorkspaceBody status={result.status}>
+      {notice ? <p className="mb-4 rounded-lg border border-border bg-card px-4 py-3 text-sm">{notice}</p> : null}
       {result.status === "ready" && result.data ? <ProjectShell project={result.data} /> : null}
     </WorkspaceBody>
   );
 }
 
-function ProjectShell({ project }: { project: ProjectDetail }) {
+async function ProjectShell({ project }: { project: ProjectDetail }) {
+  const linked = new Set(
+    project.repositories.map((repository) => repository.githubRepoId).filter((id): id is string => Boolean(id)),
+  );
+  const available = (await listRepositoryOptions()).filter(
+    (repository) => !repository.githubRepoId || !linked.has(repository.githubRepoId),
+  );
   return (
     <>
       <PageHeader
@@ -54,13 +78,21 @@ function ProjectShell({ project }: { project: ProjectDetail }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <RecordCard
           title="Repositories"
-          description="Code this project will change. GitHub is not connected in this phase."
+          description="GitHub repositories attached to this project. Nothing is pushed and no pull request is opened."
           empty="No repositories are attached."
           items={project.repositories.map((repository) => ({
             id: repository.id,
             title: repository.name,
-            meta: repository.url ?? `Branch ${repository.defaultBranch}`,
+            meta: [
+              repository.ownerLogin,
+              repository.defaultBranch,
+              repository.private ? "Private" : "Public",
+              repository.permission,
+            ]
+              .filter(Boolean)
+              .join(" · "),
           }))}
+          extra={available.length > 0 ? <AttachRepositoryForm projectId={project.id} repositories={available} /> : null}
         />
         <RecordCard
           title="Tasks"
@@ -85,7 +117,7 @@ function ProjectShell({ project }: { project: ProjectDetail }) {
         />
         <RecordCard
           title="Pull requests"
-          description="Opened by the optimizer later. This phase does not talk to GitHub."
+          description="Opened later. This phase does not create pull requests."
           empty="No pull requests are recorded."
           items={project.pullRequests.map((pullRequest) => ({
             id: pullRequest.id,
@@ -103,11 +135,13 @@ function RecordCard({
   description,
   empty,
   items,
+  extra,
 }: {
   title: string;
   description: string;
   empty: string;
   items: Array<{ id: string; title: string; meta: string; badge?: React.ReactNode }>;
+  extra?: React.ReactNode;
 }) {
   return (
     <Card>
@@ -116,9 +150,8 @@ function RecordCard({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{empty}</p>
-        ) : (
+        {items.length === 0 ? <p className="text-sm text-muted-foreground">{empty}</p> : null}
+        {items.length > 0 ? (
           <ul className="grid gap-3">
             {items.map((item) => (
               <li key={item.id} className="flex items-start justify-between gap-3">
@@ -130,7 +163,8 @@ function RecordCard({
               </li>
             ))}
           </ul>
-        )}
+        ) : null}
+        {extra}
       </CardContent>
     </Card>
   );

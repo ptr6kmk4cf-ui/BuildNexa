@@ -19,6 +19,8 @@ const REQUIRED_MODELS = [
   "Budget",
   "PullRequest",
   "AuditLog",
+  "GithubAccount",
+  "ConnectedRepository",
 ];
 
 afterEach(async () => {
@@ -34,11 +36,23 @@ describe("database initialization", () => {
       "prisma/migrations/20261008140000_init/migration.sql",
       "utf8",
     );
+    const githubMigration = readFileSync(
+      "prisma/migrations/20261008180000_github_connection/migration.sql",
+      "utf8",
+    );
     const models = [...schema.matchAll(/^model (\w+)/gm)].map((match) => match[1]);
     expect(models).toEqual(REQUIRED_MODELS);
     for (const model of REQUIRED_MODELS) {
-      expect(migration).toContain(`CREATE TABLE "${model}"`);
+      if (model === "GithubAccount" || model === "ConnectedRepository") {
+        expect(githubMigration).toContain(`CREATE TABLE "${model}"`);
+      } else {
+        expect(migration).toContain(`CREATE TABLE "${model}"`);
+      }
     }
+    expect(githubMigration).toContain("tokenCiphertext");
+    expect(githubMigration).not.toContain("accessToken");
+    expect(schema).not.toContain("accessToken");
+    expect(schema).toContain("@@unique([userId, githubRepoId])");
     expect(schema).toContain("@@unique([taskId, dependsOnTaskId])");
     expect(schema).toContain("@@unique([userId, slug])");
     expect(schema).toContain("@@index([projectId, createdAt])");

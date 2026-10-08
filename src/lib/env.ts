@@ -3,6 +3,12 @@ import { EnvValidationError } from "@/lib/errors";
 
 const postgresUrl = /^postgres(?:ql)?:\/\/\S+$/i;
 
+const optionalEnvString = z.preprocess((value) => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}, z.string().optional());
+
 export const serverEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.preprocess((value) => {
@@ -11,6 +17,11 @@ export const serverEnvSchema = z.object({
     return trimmed === "" ? undefined : trimmed;
   }, z.string().regex(postgresUrl, "DATABASE_URL must be a PostgreSQL connection string.").optional()),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  GITHUB_CLIENT_ID: optionalEnvString,
+  GITHUB_CLIENT_SECRET: optionalEnvString,
+  GITHUB_CALLBACK_URL: optionalEnvString,
+  APP_SECRET: optionalEnvString,
+  TOKEN_ENCRYPTION_KEY: optionalEnvString,
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -41,11 +52,21 @@ export function parseServerEnv(source: {
   NODE_ENV?: string | undefined;
   DATABASE_URL?: string | undefined;
   LOG_LEVEL?: string | undefined;
+  GITHUB_CLIENT_ID?: string | undefined;
+  GITHUB_CLIENT_SECRET?: string | undefined;
+  GITHUB_CALLBACK_URL?: string | undefined;
+  APP_SECRET?: string | undefined;
+  TOKEN_ENCRYPTION_KEY?: string | undefined;
 }): ServerEnv {
   const parsed = serverEnvSchema.safeParse({
     NODE_ENV: source.NODE_ENV,
     DATABASE_URL: source.DATABASE_URL,
     LOG_LEVEL: source.LOG_LEVEL,
+    GITHUB_CLIENT_ID: source.GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET: source.GITHUB_CLIENT_SECRET,
+    GITHUB_CALLBACK_URL: source.GITHUB_CALLBACK_URL,
+    APP_SECRET: source.APP_SECRET,
+    TOKEN_ENCRYPTION_KEY: source.TOKEN_ENCRYPTION_KEY,
   });
   if (!parsed.success) {
     throw new EnvValidationError(environmentIssues(parsed.error));

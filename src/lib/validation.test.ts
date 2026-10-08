@@ -21,8 +21,17 @@ describe("validation", () => {
     });
   });
 
-  it("rejects a short project name", () => {
+  it("rejects a short project name and a repository id that is not a cuid", () => {
     expect(() => parseInput(createProjectInputSchema, { name: "A" })).toThrow(InputValidationError);
+    expect(() =>
+      parseInput(createProjectInputSchema, { name: "Authentication Upgrade", repositoryId: "mycompany/myapp" }),
+    ).toThrow(InputValidationError);
+    expect(
+      parseInput(createProjectInputSchema, {
+        name: "Authentication Upgrade",
+        repositoryId: "cjld2cjxh0000qzrmn831i7rn",
+      }).repositoryId,
+    ).toBe("cjld2cjxh0000qzrmn831i7rn");
   });
 
   it("applies pagination bounds", () => {

@@ -6,6 +6,9 @@ describe("logging", () => {
     expect(redactString("down postgresql://user:supersecret@localhost/db")).toBe(
       "down postgresql://[redacted]",
     );
+    expect(redactString("leaked gho_supersecrettokenvalue client_secret=abc")).toBe(
+      "leaked [redacted] client_secret=[redacted]",
+    );
     expect(
       redact({
         password: "supersecret",

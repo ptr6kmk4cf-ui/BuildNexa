@@ -7,6 +7,8 @@ import { getPrisma, initializeDatabase } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
 import { databaseCheck } from "@/lib/health";
 import { logger } from "@/lib/logger";
+import type { ProjectRepositoryLink } from "@/lib/github/types";
+import { describePermissions, readPermissions } from "@/lib/github/permissions";
 import { slugify } from "@/lib/slug";
 import { idSchema, paginationSchema, parseInput, type CreateProjectInput } from "@/lib/validation";
 import { readWorkspace, type LoadState } from "@/server/load";
@@ -97,6 +99,10 @@ export type ProjectDetail = {
     name: string;
     url: string | null;
     defaultBranch: string;
+    ownerLogin: string | null;
+    githubRepoId: string | null;
+    private: boolean;
+    permission: string;
   }>;
   tasks: Array<{
     id: string;
@@ -268,6 +274,10 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         name: repository.name,
         url: repository.url,
         defaultBranch: repository.defaultBranch,
+        ownerLogin: repository.ownerLogin,
+        githubRepoId: repository.githubRepoId,
+        private: repository.private,
+        permission: describePermissions(readPermissions(repository.permissions)),
       })),
       tasks: project.tasks.map((task) => ({
         id: task.id,
@@ -398,6 +408,7 @@ export async function getSettings(): Promise<SettingsSnapshot> {
 
 export async function createProjectRecord(
   input: CreateProjectInput,
+  link?: { userId?: string; repository?: ProjectRepositoryLink },
 ): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
   await io();
   const prisma = getPrisma();
@@ -410,14 +421,22 @@ export async function createProjectRecord(
 
   try {
     const project = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.upsert({
-        where: { email: LOCAL_OPERATOR_EMAIL },
-        update: {},
-        create: {
-          email: LOCAL_OPERATOR_EMAIL,
-          name: LOCAL_OPERATOR_NAME,
-        },
-      });
+      const user = link?.userId
+        ? await tx.user.findUnique({ where: { id: link.userId } })
+        : await tx.user.upsert({
+            where: { email: LOCAL_OPERATOR_EMAIL },
+            update: {},
+            create: {
+              email: LOCAL_OPERATOR_EMAIL,
+              name: LOCAL_OPERATOR_NAME,
+            },
+          });
+      if (!user) {
+        throw new AppError("The signed-in account is not on record.", {
+          code: "missing_user",
+          status: 401,
+        });
+      }
       const slug = await uniqueSlug(tx, user.id, input.name);
       const created = await tx.project.create({
         data: {
@@ -439,6 +458,36 @@ export async function createProjectRecord(
           metadata: { name: created.name, slug: created.slug },
         },
       });
+      if (link?.repository) {
+        const repository = link.repository;
+        const savedRepository = await tx.repository.create({
+          data: {
+            projectId: created.id,
+            name: repository.fullName,
+            url: repository.htmlUrl,
+            defaultBranch: repository.defaultBranch,
+            ownerLogin: repository.ownerLogin,
+            githubRepoId: repository.githubRepoId,
+            private: repository.private,
+            permissions: repository.permissions,
+            connectedRepositoryId: repository.connectedRepositoryId,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            userId: user.id,
+            projectId: created.id,
+            action: "CREATE",
+            entityType: "Repository",
+            entityId: savedRepository.id,
+            metadata: {
+              fullName: repository.fullName,
+              defaultBranch: repository.defaultBranch,
+              githubRepoId: repository.githubRepoId,
+            },
+          },
+        });
+      }
       return created;
     });
 
@@ -448,10 +497,76 @@ export async function createProjectRecord(
     if (error instanceof AppError) {
       return { ok: false, message: error.message };
     }
+    if (isUniqueConflict(error)) {
+      return { ok: false, message: "That repository is already attached to a project." };
+    }
     logger.error("Could not save project", { error });
     return {
       ok: false,
       message: "The project could not be saved. Check the database connection and migration.",
     };
   }
+}
+
+export async function attachRepositoryRecord(input: {
+  projectId: string;
+  userId: string;
+  repository: ProjectRepositoryLink;
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  await io();
+  const prisma = getPrisma();
+  if (!prisma) {
+    return { ok: false, message: "Connect PostgreSQL before attaching a repository." };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const project = await tx.project.findUnique({
+        where: { id: input.projectId },
+        select: { id: true },
+      });
+      if (!project) {
+        throw new AppError("That project is not on record.", { code: "missing_project", status: 404 });
+      }
+      const saved = await tx.repository.create({
+        data: {
+          projectId: project.id,
+          name: input.repository.fullName,
+          url: input.repository.htmlUrl,
+          defaultBranch: input.repository.defaultBranch,
+          ownerLogin: input.repository.ownerLogin,
+          githubRepoId: input.repository.githubRepoId,
+          private: input.repository.private,
+          permissions: input.repository.permissions,
+          connectedRepositoryId: input.repository.connectedRepositoryId,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: input.userId,
+          projectId: project.id,
+          action: "CREATE",
+          entityType: "Repository",
+          entityId: saved.id,
+          metadata: {
+            fullName: input.repository.fullName,
+            defaultBranch: input.repository.defaultBranch,
+            githubRepoId: input.repository.githubRepoId,
+          },
+        },
+      });
+    });
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof AppError) return { ok: false, message: error.message };
+    if (isUniqueConflict(error)) {
+      return { ok: false, message: "That repository is already attached to a project." };
+    }
+    logger.error("Could not attach repository", { error });
+    return { ok: false, message: "The repository could not be attached." };
+  }
+}
+
+function isUniqueConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }

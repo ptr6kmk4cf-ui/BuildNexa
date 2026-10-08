@@ -2,6 +2,7 @@ export type CreateProjectFieldErrors = {
   name?: string[];
   description?: string[];
   objective?: string[];
+  repositoryId?: string[];
 };
 
 export type CreateProjectFormState = {

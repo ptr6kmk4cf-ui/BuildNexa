@@ -4,6 +4,7 @@ import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { SetupHint } from "@/components/states/setup-hint";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LOCAL_OPERATOR_NAME } from "@/lib/constants";
+import { loadGithubPage } from "@/server/github";
 import { getSettings } from "@/server/workspace";
 
 export const metadata = { title: "Settings" };
@@ -30,11 +31,20 @@ export default function SettingsPage() {
 }
 
 async function SettingsPanel() {
-  const settings = await getSettings();
+  const [settings, github] = await Promise.all([getSettings(), loadGithubPage()]);
+  const githubStatus =
+    github.setup.status === "disabled"
+      ? "Not configured"
+      : github.setup.status === "incomplete"
+        ? "Incomplete configuration"
+        : github.account
+          ? `Connected as ${github.account.login}`
+          : "Not connected";
 
   const rows = [
-    { label: "Phase", value: "1, foundation only" },
+    { label: "Phase", value: "2, GitHub connection" },
     { label: "Database", value: databaseLabel[settings.database] },
+    { label: "GitHub", value: githubStatus },
     { label: "Log level", value: settings.logLevel },
     { label: "Node environment", value: settings.nodeEnv },
     { label: "Workspace operator", value: `${LOCAL_OPERATOR_NAME} (${settings.operatorEmail})` },
@@ -46,8 +56,8 @@ async function SettingsPanel() {
         <CardHeader>
           <CardTitle>Runtime</CardTitle>
           <CardDescription>
-            Authentication is not part of this phase. Projects are owned by the local operator
-            record above.
+            GitHub OAuth identifies the connected account. Tokens stay on the server. Projects
+            created before a connection still belong to the local operator.
           </CardDescription>
         </CardHeader>
         <CardContent>
