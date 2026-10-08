@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <AppNav />
           </Suspense>
         </div>
-        <p className="mt-auto px-4 py-4 text-xs text-sidebar-foreground/55">Phase 1, records only</p>
+        <p className="mt-auto px-4 py-4 text-xs text-sidebar-foreground/55">Phase 3, model providers</p>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:hidden">

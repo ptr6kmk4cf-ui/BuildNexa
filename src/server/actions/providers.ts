@@ -10,11 +10,6 @@ export type ProviderFormState = {
   saved: boolean;
 };
 
-export const initialProviderFormState: ProviderFormState = {
-  message: null,
-  saved: false,
-};
-
 export async function saveProviderPreferences(
   _previous: ProviderFormState,
   formData: FormData,

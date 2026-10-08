@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { initialProviderFormState, saveProviderPreferences } from "@/server/actions/providers";
+import { saveProviderPreferences, type ProviderFormState } from "@/server/actions/providers";
 import type { ProviderToggle } from "@/lib/ai/catalog";
 import { Button } from "@/components/ui/button";
 
@@ -12,7 +12,10 @@ export function ProviderForm({
   providers: ProviderToggle[];
   databaseConfigured: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(saveProviderPreferences, initialProviderFormState);
+  const [state, formAction, pending] = useActionState(saveProviderPreferences, {
+    message: null,
+    saved: false,
+  } satisfies ProviderFormState);
 
   return (
     <form action={formAction} className="grid gap-4">
