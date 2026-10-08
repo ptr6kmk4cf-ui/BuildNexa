@@ -214,8 +214,10 @@ export async function executeStoredProject(
         caller,
         ...(workspace
           ? {
+              concurrency: 1,
               environment: {
                 kind: "controlled" as const,
+                writesRepository: true,
                 run: (call: Parameters<typeof runSandboxModel>[0]["call"]) => runSandboxModel({ workspace, call, callModel: caller }),
               },
             }

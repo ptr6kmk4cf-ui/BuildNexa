@@ -444,6 +444,28 @@ describe("workspace verifier", () => {
     expect(second.summary).toContain("same result");
     expect(spawned).toHaveLength(4);
   });
+
+  it("waits for an in-flight check instead of starting a second one", async () => {
+    let started = 0;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const verify = createWorkspaceVerifier(process.cwd(), async (planned) => {
+      started += 1;
+      if (planned.kind === "test") await gate;
+      return { output: "ok", exitCode: 0, durationMs: 1 };
+    });
+    const first = verify();
+    const second = verify();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(started).toBe(1);
+    release();
+    const [left, right] = await Promise.all([first, second]);
+    expect(left.outcome).toBe("pass");
+    expect(right.outcome).toBe("pass");
+    expect(started).toBe(4);
+  });
 });
 
 function registryModel(overrides: Partial<RegistryModel> & Pick<RegistryModel, "provider" | "modelId" | "displayName">): RegistryModel {

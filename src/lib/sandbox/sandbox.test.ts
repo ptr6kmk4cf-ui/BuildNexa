@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { bwrapArguments, SANDBOX_LAUNCH, sandboxEnvLeaks } from "@/lib/sandbox/bwrap";
 import { detectProject } from "@/lib/sandbox/detect";
-import { parseToolCall } from "@/lib/sandbox/agent";
+import { parseToolCall, runSandboxModel } from "@/lib/sandbox/agent";
 import { discardLeakedCredential, githubCloneUrl, openLocalRepository, sandboxBranchName } from "@/lib/sandbox/workflow";
 import { runIsolated, sandboxRuntime } from "@/lib/sandbox/run";
 import { createFileTools } from "@/lib/sandbox/tools";
@@ -152,6 +152,42 @@ describe("sandbox command line", () => {
     expect(args.filter((arg) => arg === "ghp_supersecret")).toHaveLength(1);
     expect(args.slice(args.indexOf("--") + 1)).toEqual([...SANDBOX_LAUNCH, "git", "clone", "https://github.com/acme/web.git", "."]);
     expect(args.join("\n").split("ghp_supersecret").length - 1).toBe(1);
+  });
+});
+
+describe("sandbox result", () => {
+  it("keeps the diff and counts file tools", async () => {
+    const logs = [{ op: "write_file", path: "a.txt", ok: true, detail: "ok" }];
+    const result = await runSandboxModel({
+      workspace: {
+        logs,
+        profile: { kind: "node", packageManager: "npm", commands: [] },
+        branch: "apo/test",
+        contextMessage: async () => "context",
+        apply: async () => "unused",
+        persist: async () => ({ summary: "Committed sandbox edits on apo/test.", diff: "diff --git a/a.txt\n+hello", branch: "apo/test" }),
+        verify: async () => ({ outcome: "pass", checks: [], durationMs: 0, errors: null, summary: "ok", costUsd: null }),
+        close: async () => undefined,
+      },
+      call: {
+        provider: "openai",
+        modelId: "gpt-test",
+        messages: [{ role: "user", content: "edit the file" }],
+        timeoutMs: 1_000,
+        signal: new AbortController().signal,
+      },
+      callModel: async () => ({
+        ok: true,
+        modelId: "gpt-test",
+        text: '{"tool":"done","summary":"updated the file"}',
+        usage: { inputTokens: 3, outputTokens: 4, cachedInputTokens: 0 },
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.text).toContain("diff --git a/a.txt");
+    expect(result.text).toContain("Committed sandbox edits on apo/test.");
+    expect(result.toolCalls).toBe(1);
   });
 });
 

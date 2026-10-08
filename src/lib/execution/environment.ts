@@ -14,6 +14,7 @@ export type ModelCaller = (call: ModelCall) => Promise<ExecuteResult>;
 // This environment only calls a model. It has no shell, no filesystem writes, and no repository client.
 export interface ExecutionEnvironment {
   readonly kind: "controlled";
+  readonly writesRepository?: boolean;
   run(call: ModelCall): Promise<EnvironmentResult>;
 }
 

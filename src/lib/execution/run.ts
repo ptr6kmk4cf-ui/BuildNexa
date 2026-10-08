@@ -382,7 +382,9 @@ async function executeVerified(
         input.logs,
         "completed",
         record.attemptCount,
-        "Verification passed. The model reply was stored and was not written into the project.",
+        input.environment.writesRepository
+          ? "Verification passed. The diff is in the stored reply. Nothing was pushed."
+          : "Verification passed. The model reply was stored and was not written into the project.",
       );
       return;
     }
@@ -479,6 +481,8 @@ async function attemptModel(input: {
       input.record.outputTokens += result.usage.outputTokens;
       input.record.cachedInputTokens += result.usage.cachedInputTokens;
       const actual = quote(input.price, input.model.provider, input.model.modelId, result.usage);
+      const toolCalls = result.toolCalls ?? 0;
+      input.record.toolCalls += toolCalls;
       if (input.ledger && reserved.amount) commitSpend(input.ledger, kind, reserved.amount, actual);
       input.record.actualCostUsd = combineCost(input.record.actualCostUsd, actual);
       recordAttempt(input.record, input.model, {
@@ -487,7 +491,7 @@ async function attemptModel(input: {
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
         cachedInputTokens: result.usage.cachedInputTokens,
-        toolCalls: 0,
+        toolCalls,
         durationMs: result.durationMs,
         actualCostUsd: actual,
         kind,
@@ -500,7 +504,7 @@ async function attemptModel(input: {
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
           cachedInputTokens: result.usage.cachedInputTokens,
-          toolCalls: 0,
+          toolCalls,
           durationMs: result.durationMs,
           provider: input.model.provider,
           modelId: input.model.modelId,

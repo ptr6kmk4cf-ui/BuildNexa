@@ -6,7 +6,7 @@ import type { ExecuteResult, TokenCounts } from "@/lib/ai/types";
 import { runExecution } from "@/lib/execution/run";
 import { buildTaskMessages, looksLikeHostCommand } from "@/lib/execution/prompt";
 import type { ExecutionModel, ExecutionTask } from "@/lib/execution/types";
-import type { ModelCaller } from "@/lib/execution/environment";
+import type { ExecutionEnvironment, ModelCaller } from "@/lib/execution/environment";
 
 const model: ExecutionModel = { provider: "openai", modelId: "gpt-test", displayName: "GPT Test" };
 
@@ -37,6 +37,33 @@ function hang(call: { signal: AbortSignal }): Promise<ExecuteResult> {
 }
 
 describe("task execution", () => {
+  it("stores tool calls and the sandbox diff from the environment", async () => {
+    const environment: ExecutionEnvironment = {
+      kind: "controlled",
+      writesRepository: true,
+      async run() {
+        return {
+          ok: true,
+          text: "Committed sandbox edits on apo/test.\ndiff --git a/a.txt\n+hello",
+          usage: { inputTokens: 4, outputTokens: 6, cachedInputTokens: 0 },
+          durationMs: 5,
+          toolCalls: 2,
+        };
+      },
+    };
+    const report = await runExecution({
+      tasks: [task({ id: "a", title: "A" })],
+      caller: async () => ok("unused"),
+      environment,
+      verify: async () => ({ outcome: "pass", checks: [], durationMs: 1, errors: null, summary: "Checks passed.", costUsd: null }),
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(report.tasks[0]?.toolCalls).toBe(2);
+    expect(report.tasks[0]?.result).toContain("diff --git a/a.txt");
+    expect(report.logs.some((entry) => entry.message.includes("Nothing was pushed."))).toBe(true);
+  });
+
   it("runs tasks in dependency order", async () => {
     const started: string[] = [];
     const caller: ModelCaller = async (call) => {

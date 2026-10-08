@@ -51,7 +51,7 @@ export async function runSandboxModel(input: {
   workspace: RepositoryWorkspace;
   call: ModelCall;
   callModel: ModelCaller;
-}): Promise<{ ok: true; text: string; usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number }; durationMs: number } | { ok: false; error: "cancelled"; durationMs: number }> {
+}): Promise<{ ok: true; text: string; usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number }; durationMs: number; toolCalls: number } | { ok: false; error: "cancelled"; durationMs: number }> {
   const started = Date.now();
   const usage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
   const messages: ProviderMessage[] = [
@@ -85,8 +85,9 @@ export async function runSandboxModel(input: {
     messages.push({ role: "user", content: outcome });
   }
   const prepared = await input.workspace.persist();
-  const text = [notes.at(-1) ?? "The sandbox finished.", prepared.summary].filter(Boolean).join("\n");
-  return { ok: true, text, usage, durationMs: Date.now() - started };
+  const text = [notes.at(-1) ?? "The sandbox finished.", prepared.summary, prepared.diff].filter((part) => part.length > 0).join("\n");
+  const toolCalls = input.workspace.logs.filter((entry) => entry.op !== "branch" && entry.op !== "persist" && entry.op !== "verify").length;
+  return { ok: true, text, usage, durationMs: Date.now() - started, toolCalls };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

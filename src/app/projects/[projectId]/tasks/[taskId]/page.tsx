@@ -244,12 +244,12 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
               <CardDescription>
                 {task.verifications.length > 0
                   ? "Independent project checks. A model reply is not enough to call the task complete."
-                  : "No verification is stored yet. Tests, lint, type checking, and the production build run from the project configuration."}
+                  : "No verification is stored yet. With a GitHub repository, test, lint, typecheck, and build run inside the sandbox. Otherwise they run this application's scripts."}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
               {task.verifications.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Run tasks from the project page. The checks use the scripts in this project, not commands from the model.</p>
+                <p className="text-sm text-muted-foreground">Run tasks from the project page. Checks use the detected project scripts, not commands written by the model.</p>
               ) : (
                 task.verifications.map((verification, index) => (
                   <section key={verification.id} className="grid gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0">

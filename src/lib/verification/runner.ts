@@ -26,7 +26,8 @@ export function readProjectChecks(cwd: string): DetectedChecks {
 
 export function createWorkspaceVerifier(cwd: string, spawnImpl: CommandSpawn = spawnCommand): (signal?: AbortSignal) => Promise<TaskVerification> {
   const cache = new Map<string, VerificationCheck>();
-  return async (signal) => {
+  let chain: Promise<void> = Promise.resolve();
+  const verify = async (signal?: AbortSignal): Promise<TaskVerification> => {
     const detected = readProjectChecks(cwd);
     if (!detected.ok) return unknownVerification(detected.reason);
     const checks: VerificationCheck[] = [];
@@ -60,6 +61,11 @@ export function createWorkspaceVerifier(cwd: string, spawnImpl: CommandSpawn = s
       verification.summary = `${verification.summary}. Workspace files were not modified, so a repeated check uses the same result.`;
     }
     return verification;
+  };
+  return (signal) => {
+    const run = chain.then(() => verify(signal));
+    chain = run.then(() => undefined, () => undefined);
+    return run;
   };
 }
 

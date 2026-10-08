@@ -115,5 +115,5 @@ export type ModelCallUsage = TokenCounts;
 export type EnvironmentFailure = ProviderFailure | "cancelled";
 
 export type EnvironmentResult =
-  | { ok: true; text: string; usage: ModelCallUsage; durationMs: number }
+  | { ok: true; text: string; usage: ModelCallUsage; durationMs: number; toolCalls?: number }
   | { ok: false; error: EnvironmentFailure; durationMs: number };
