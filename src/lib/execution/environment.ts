@@ -11,8 +11,7 @@ export type ModelCall = {
 
 export type ModelCaller = (call: ModelCall) => Promise<ExecuteResult>;
 
-// A later phase can replace this with a container. This implementation only calls a model.
-// It has no shell, no filesystem writes, and no repository client.
+// This environment only calls a model. It has no shell, no filesystem writes, and no repository client.
 export interface ExecutionEnvironment {
   readonly kind: "controlled";
   run(call: ModelCall): Promise<EnvironmentResult>;

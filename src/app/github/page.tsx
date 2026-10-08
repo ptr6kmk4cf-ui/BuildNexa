@@ -298,6 +298,7 @@ function ConnectedGithub({
 
 async function recordedPullRequests(): Promise<RecordedPullRequest[] | null> {
   const result = await listRecordedPullRequests();
+  if (result.status === "signedOut") return [];
   if (result.status !== "ready") return null;
   return result.data;
 }

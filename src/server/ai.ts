@@ -9,6 +9,8 @@ import { LOCAL_OPERATOR_EMAIL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
 import { getPrisma } from "@/lib/db";
 import { getServerEnv, type ServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { anonymousMayUseLocalOperator } from "@/lib/security/viewer";
+import { currentGithubUserId } from "@/server/github";
 
 export async function loadAiCatalog(): Promise<{ status: "ready"; data: AiCatalog } | { status: "unavailable" }> {
   await io();
@@ -60,6 +62,12 @@ export async function saveProviderAvailability(
   }
 
   const enabledSet = new Set(enabled);
+  if (!anonymousMayUseLocalOperator(getServerEnv().NODE_ENV)) {
+    const sessionUserId = await currentGithubUserId();
+    if (!sessionUserId) {
+      return { ok: false, message: "Connect GitHub before changing provider availability." };
+    }
+  }
   try {
     const owner = await preferenceOwner(prisma, true);
     if (!owner) return { ok: false, message: "Provider availability could not be saved." };
@@ -119,8 +127,9 @@ async function readPreferenceRows(prisma: PrismaClient) {
 }
 
 async function preferenceOwner(prisma: PrismaClient, create: boolean): Promise<{ id: string } | null> {
-  // Availability is a workspace choice. Keeping it on the local operator means
-  // connecting GitHub does not hide the providers that were already saved.
+  // Provider on/off is one workspace setting, stored on the local operator.
+  // A GitHub session does not get a separate switch. Production still requires
+  // a session before this function will write it.
   if (!create) {
     return prisma.user.findUnique({ where: { email: LOCAL_OPERATOR_EMAIL }, select: { id: true } });
   }

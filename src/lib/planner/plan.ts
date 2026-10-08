@@ -379,7 +379,7 @@ function outputFor(id: string): string {
   if (id === "database") return "A schema or migration plan for the new or changed records. The migration is not applied by this planner.";
   if (id === "backend") return "The endpoint contracts, including inputs, outputs, and failure cases. No server code is edited here.";
   if (id === "frontend") return "The screens or components to add or change, including the empty and error states.";
-  return "A description of the code change a later phase would make. This planner does not edit files.";
+  return "A description of the code change. This planner does not edit files.";
 }
 
 function criteriaFor(id: string): string {
@@ -413,8 +413,8 @@ function contextFor(taskId: string, repository: RepositoryContext | null): Conte
       repositoryFullName: repository?.fullName ?? null,
       defaultBranch: repository?.defaultBranch ?? null,
       reason: repository
-        ? `Later, open only these paths in ${repository.fullName}@${repository.defaultBranch} for ${taskId}.`
-        : `Later, open only these paths for ${taskId}. No repository is attached yet.`,
+        ? `Path hints for ${taskId} in ${repository.fullName}@${repository.defaultBranch}. This planner does not read them.`
+        : `Path hints for ${taskId}. No repository is attached, and this planner does not read them.`,
       pathHints,
     },
   ];
@@ -440,9 +440,9 @@ function summarize(mode: OptimizationMode, budgetUsd: string, taskCount: number,
   const label = mode === "savings" ? "Savings" : mode === "quality" ? "Quality" : "Balanced";
   const zero = budgetUsd === "0" || budgetUsd === "0.0" || budgetUsd === "0.00";
   const budgetNote = zero
-    ? ` The budget is ${money(budgetUsd)}, so a later phase should not run this plan until the limit is raised.`
+    ? ` The budget is ${money(budgetUsd)}, so this plan should not be run until the limit is raised.`
     : ` Budget ${money(budgetUsd)} is recorded and is not spent.`;
-  return `${label} plan with ${taskCount} tasks.${budgetNote} ${requestCount} context requests name paths a later step may open. No model is selected, no files are changed, and no pull request is opened.`;
+  return `${label} plan with ${taskCount} tasks.${budgetNote} ${requestCount} context requests name paths. This planner does not open those files. No model is selected, no files are changed, and no pull request is opened.`;
 }
 
 function money(value: string): string {

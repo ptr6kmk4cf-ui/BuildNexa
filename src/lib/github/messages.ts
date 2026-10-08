@@ -12,6 +12,7 @@ export const GITHUB_ERROR_MESSAGES: Record<GithubFailure, string> = {
   unavailable: "GitHub could not be reached. The saved connection was left unchanged.",
   database: "Connect PostgreSQL before saving a GitHub account.",
   not_connected: "Connect GitHub before loading repositories.",
+  rate_limited: "Too many GitHub connection attempts. Wait a few minutes and try again.",
 };
 
 export const GITHUB_NOTICES = {

@@ -9,8 +9,10 @@ import { logger } from "@/lib/logger";
 import { TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_TYPES } from "@/lib/planner/types";
 import { routeTask } from "@/lib/routing/route";
 import type { HistorySample, RoutingDecision } from "@/lib/routing/types";
+import { routeLimiter } from "@/lib/security/limits";
 import { idSchema } from "@/lib/validation";
 import { readEnabledProviderIds } from "@/server/ai";
+import { authorizeOwnedProject } from "@/server/viewer";
 
 const MODE = { SAVINGS: "savings", BALANCED: "balanced", QUALITY: "quality" } as const;
 
@@ -21,6 +23,8 @@ export async function routeStoredProject(
   if (!idSchema.safeParse(projectId).success) return { ok: false, message: "That project could not be found." };
   const prisma = getPrisma();
   if (!prisma) return { ok: false, message: "Connect PostgreSQL before choosing models." };
+  const access = await authorizeOwnedProject(prisma, projectId, routeLimiter);
+  if (!access.ok) return access;
 
   try {
     const project = await prisma.project.findUnique({

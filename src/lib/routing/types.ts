@@ -31,7 +31,7 @@ export type RouteTaskInput = {
   complexity: number;
 };
 
-// Observed attempts for one model and task type. Later phases can fill this from TaskAttempt.
+// Observed attempts for one model and task type, counted from TaskAttempt rows.
 export type HistorySample = {
   provider: ProviderId;
   modelId: string;

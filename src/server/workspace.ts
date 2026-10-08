@@ -3,6 +3,7 @@ import { io } from "next/cache";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { AppError, uniqueRecordMessage } from "@/lib/errors";
 import { LOCAL_OPERATOR_EMAIL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
+import { anonymousMayUseLocalOperator } from "@/lib/security/viewer";
 import { getPrisma, initializeDatabase } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
 import { databaseCheck } from "@/lib/health";
@@ -18,7 +19,7 @@ import { listRegistryModels } from "@/lib/ai/registry";
 import { addMoney } from "@/lib/routing/money";
 import { countCompletedProjects, runIsActive } from "@/lib/dashboard/status";
 import { EXECUTION_CONFIG } from "@/lib/execution/config";
-import { readWorkspace, type LoadState } from "@/server/load";
+import { readScopedWorkspace, readWorkspace, type LoadState } from "@/server/load";
 
 export type ProjectSummary = {
   id: string;
@@ -236,17 +237,20 @@ async function uniqueSlug(
 }
 
 export async function getDashboard(): Promise<LoadState<DashboardData>> {
-  return readWorkspace(async (prisma) => {
+  return readScopedWorkspace(async (prisma, viewerId) => {
+    const owned = { userId: viewerId };
     const [projectCount, activeExecutions, taskProjects, spend, budgets, records, recentProjects, recentActivity] =
       await Promise.all([
-        prisma.project.count(),
+        prisma.project.count({ where: owned }),
         prisma.executionRun.count({
           where: {
             status: "RUNNING",
             heartbeatAt: { gt: new Date(Date.now() - EXECUTION_CONFIG.staleRunMs) },
+            project: owned,
           },
         }),
         prisma.project.findMany({
+          where: owned,
           select: {
             tasks: {
               select: {
@@ -260,25 +264,27 @@ export async function getDashboard(): Promise<LoadState<DashboardData>> {
           },
         }),
         prisma.costRecord.aggregate({
-          where: { currency: "USD" },
+          where: { currency: "USD", project: owned },
           _sum: { amount: true },
         }),
         prisma.budget.findMany({
-          where: { currency: "USD" },
+          where: { currency: "USD", project: owned },
           orderBy: { createdAt: "desc" },
           select: { projectId: true, limitAmount: true },
         }),
         prisma.costRecord.findMany({
-          where: { currency: "USD" },
+          where: { currency: "USD", project: owned },
           orderBy: { createdAt: "desc" },
           include: costRecordInclude,
         }),
         prisma.project.findMany({
+          where: owned,
           orderBy: { updatedAt: "desc" },
           take: 6,
           select: { id: true, name: true, status: true, updatedAt: true },
         }),
         prisma.auditLog.findMany({
+          where: { OR: [{ userId: viewerId }, { project: owned }] },
           orderBy: { createdAt: "desc" },
           take: 8,
           include: {
@@ -332,8 +338,9 @@ export async function getDashboard(): Promise<LoadState<DashboardData>> {
 }
 
 export async function listProjects(): Promise<LoadState<ProjectSummary[]>> {
-  return readWorkspace(async (prisma) => {
+  return readScopedWorkspace(async (prisma, viewerId) => {
     const projects = await prisma.project.findMany({
+      where: { userId: viewerId },
       orderBy: { updatedAt: "desc" },
       take: 50,
       include: {
@@ -362,10 +369,9 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
     return { status: "ready", data: null };
   }
 
-  return readWorkspace(async (prisma) => {
-    const [project, runs, logs] = await Promise.all([
-      prisma.project.findUnique({
-      where: { id: parsed.data },
+  return readScopedWorkspace(async (prisma, viewerId) => {
+    const project = await prisma.project.findFirst({
+      where: { id: parsed.data, userId: viewerId },
       include: {
         repositories: { orderBy: { name: "asc" }, take: 50 },
         plans: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -394,20 +400,21 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
           include: costRecordInclude,
         },
       },
-    }),
+    });
+    if (!project) return null;
+    const [runs, logs] = await Promise.all([
       prisma.executionRun.findMany({
-        where: { projectId: parsed.data },
+        where: { projectId: project.id },
         orderBy: { createdAt: "desc" },
         take: 8,
       }),
       prisma.executionLog.findMany({
-        where: { execution: { task: { projectId: parsed.data } } },
+        where: { execution: { task: { projectId: project.id } } },
         orderBy: { createdAt: "desc" },
         take: 50,
         include: { execution: { select: { task: { select: { id: true, title: true } } } } },
       }),
     ]);
-    if (!project) return null;
 
     return {
       id: project.id,
@@ -550,8 +557,9 @@ export type RecordedPullRequest = {
 };
 
 export async function listRecordedPullRequests(): Promise<LoadState<RecordedPullRequest[]>> {
-  return readWorkspace(async (prisma) => {
+  return readScopedWorkspace(async (prisma, viewerId) => {
     const rows = await prisma.pullRequest.findMany({
+      where: { project: { userId: viewerId } },
       orderBy: { updatedAt: "desc" },
       take: 20,
       include: { project: { select: { id: true, name: true } } },
@@ -569,25 +577,28 @@ export async function listRecordedPullRequests(): Promise<LoadState<RecordedPull
 }
 
 export async function getCosts(): Promise<LoadState<CostOverview>> {
-  return readWorkspace(async (prisma) => {
+  return readScopedWorkspace(async (prisma, viewerId) => {
+    const owned = { project: { userId: viewerId } };
     const [spend, recordCount, budgets, recent, records] = await Promise.all([
       prisma.costRecord.aggregate({
-        where: { currency: "USD" },
+        where: { currency: "USD", ...owned },
         _sum: { amount: true },
       }),
-      prisma.costRecord.count(),
+      prisma.costRecord.count({ where: owned }),
       prisma.budget.findMany({
+        where: owned,
         orderBy: { updatedAt: "desc" },
         take: 20,
         include: { project: { select: { id: true, name: true } } },
       }),
       prisma.costRecord.findMany({
+        where: owned,
         orderBy: { createdAt: "desc" },
         take: 20,
         include: { project: { select: { name: true } } },
       }),
       prisma.costRecord.findMany({
-        where: { currency: "USD" },
+        where: { currency: "USD", ...owned },
         orderBy: { createdAt: "desc" },
         include: {
           ...costRecordInclude,
@@ -686,8 +697,9 @@ function isCostKind(value: string): value is CostKind {
 
 export async function getActivity(input: unknown = { limit: 50 }): Promise<LoadState<ActivityEntry[]>> {
   const { limit } = parseInput(paginationSchema, input);
-  return readWorkspace(async (prisma) => {
+  return readScopedWorkspace(async (prisma, viewerId) => {
     const rows = await prisma.auditLog.findMany({
+      where: { OR: [{ userId: viewerId }, { project: { userId: viewerId } }] },
       orderBy: { createdAt: "desc" },
       take: limit,
       include: {
@@ -731,6 +743,9 @@ export async function createProjectRecord(
       ok: false,
       message: "Connect PostgreSQL before creating a project. Set DATABASE_URL and apply the migration.",
     };
+  }
+  if (!link?.userId && !anonymousMayUseLocalOperator(getServerEnv().NODE_ENV)) {
+    return { ok: false, message: "Connect GitHub before creating a project." };
   }
 
   try {
@@ -834,8 +849,8 @@ export async function attachRepositoryRecord(input: {
 
   try {
     await prisma.$transaction(async (tx) => {
-      const project = await tx.project.findUnique({
-        where: { id: input.projectId },
+      const project = await tx.project.findFirst({
+        where: { id: input.projectId, userId: input.userId },
         select: { id: true },
       });
       if (!project) {

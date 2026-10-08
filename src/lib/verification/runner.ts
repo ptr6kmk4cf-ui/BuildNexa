@@ -165,7 +165,7 @@ function killProcessTree(child: ChildProcess): void {
   }
 }
 
-function verificationEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function verificationEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { NODE_ENV: base.NODE_ENV ?? "production" };
   for (const [key, value] of Object.entries(base)) {
     if (value === undefined) continue;

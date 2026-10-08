@@ -1,5 +1,9 @@
 # AI Project Optimizer
 
+Phase 11 checks whether this application can be deployed. Project, cost, and activity reads are limited to the signed-in GitHub account. In production, a request with no session does not see the local operator's records and cannot create a project. Local development still stores a project for `local-operator@localhost.invalid` when no GitHub session exists. Connect, plan, route, execute, and cancel are rate limited inside the web process. That limit is not shared across instances.
+
+The execution environment calls a model. It does not write the repository, create a branch, or open a pull request. Verification runs allowlisted `npm` checks in this application directory, with a timeout, and without copying secrets into the child process. There is no background worker and no container sandbox. Deployment steps are in [DEPLOYMENT.md](DEPLOYMENT.md). The layout is in [ARCHITECTURE.md](ARCHITECTURE.md). The security boundaries are in [SECURITY.md](SECURITY.md).
+
 Phase 10 is the workspace around that backend: the dashboard, project sections, live task status, task detail, costs, and a six-step project start. Every figure is read from stored projects, runs, and cost records.
 
 Phase 9 spends a project budget on the lowest expected cost per successful result, not the lowest token price. The approved amount reserves shares for retries, debugging, escalation, and verification. A call whose estimate does not fit the remaining share is not sent, unless the run was explicitly allowed to exceed the budget. Actual provider cost, the estimated premium-token baseline, the estimated difference, and measured savings are labeled separately. Measured savings stay unmeasured until a premium run is executed.
@@ -134,7 +138,7 @@ npm start           # production server on port 43123
 
 ## Tests
 
-Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, model capabilities, simple and complex plans, invalid objectives, dependency links, cycle rejection, task validation, routing for simple coding, complex coding, documentation, testing, debugging, savings versus quality, an unavailable provider, and insufficient capability, plus budget enforcement, cost aggregation, retry cost, escalation cost, provider pricing, an insufficient budget, and cancellation when the budget is exhausted.
+Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, model capabilities, simple and complex plans, invalid objectives, dependency links, cycle rejection, task validation, routing for simple coding, complex coding, documentation, testing, debugging, savings versus quality, an unavailable provider, and insufficient capability, plus budget enforcement, cost aggregation, retry cost, escalation cost, provider pricing, an insufficient budget, and cancellation when the budget is exhausted. Security tests cover session versus local-operator access, the in-process rate limit, the verification command allowlist, and secret stripping from check processes. A local pipeline test plans a task, selects a priced model, records a cost, and rejects an over-budget call. That test does not sign in, call GitHub, or open a pull request.
 
 ```bash
 npm test

@@ -19,6 +19,7 @@ import { readGithubConfig, type GithubConfigResult } from "@/lib/github/config";
 import { OAUTH_STATE_COOKIE, type CookieJar, type CookieOptions } from "@/lib/github/cookies";
 import type { PublicGithubAccount } from "@/lib/github/types";
 import type { ConnectedRepositoryRecord } from "@/lib/github/types";
+import { githubConnectLimiter } from "@/lib/security/limits";
 import { createPrismaGithubStore } from "@/server/github-store";
 
 export type GithubPageData = {
@@ -29,11 +30,14 @@ export type GithubPageData = {
 };
 
 export async function startGithubConnection(): Promise<
-  { type: "redirect"; url: string } | { type: "error"; error: "not_configured" | "incomplete" }
+  { type: "redirect"; url: string } | { type: "error"; error: "not_configured" | "incomplete" | "rate_limited" }
 > {
   const setup = readGithubConfig(getServerEnv());
   if (setup.status !== "ready") {
     return { type: "error", error: setup.status === "disabled" ? "not_configured" : "incomplete" };
+  }
+  if (!githubConnectLimiter.allow("github-connect")) {
+    return { type: "error", error: "rate_limited" };
   }
   const url = beginAuthorization({
     config: setup.config,

@@ -9,8 +9,11 @@ import {
   type CreateProjectFormState,
 } from "@/lib/project-form";
 import { projectLinkFromRepository } from "@/lib/github/types";
+import { planLimiter } from "@/lib/security/limits";
+import { anonymousMayUseLocalOperator } from "@/lib/security/viewer";
 import { createProjectInputSchema, parseInput } from "@/lib/validation";
-import { selectCurrentUsersRepository } from "@/server/github";
+import { getServerEnv } from "@/lib/env";
+import { currentGithubUserId, selectCurrentUsersRepository } from "@/server/github";
 import { createProjectRecord } from "@/server/workspace";
 
 function fieldErrorsFromDetails(details: unknown): CreateProjectFieldErrors {
@@ -39,6 +42,17 @@ export async function createProject(
   formData: FormData,
 ): Promise<CreateProjectFormState> {
   try {
+    const sessionUserId = await currentGithubUserId();
+    if (!planLimiter.allow(sessionUserId ?? "anonymous")) {
+      return {
+        ...initialCreateProjectFormState,
+        status: "error",
+        message: "Too many projects were started. Wait a few minutes and try again.",
+      };
+    }
+    if (!sessionUserId && !anonymousMayUseLocalOperator(getServerEnv().NODE_ENV)) {
+      return { ...initialCreateProjectFormState, status: "error", message: "Connect GitHub before creating a project." };
+    }
     const input = parseInput(createProjectInputSchema, {
       name: formData.get("name"),
       description: formData.get("description"),

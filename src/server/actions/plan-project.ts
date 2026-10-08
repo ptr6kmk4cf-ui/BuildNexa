@@ -10,8 +10,11 @@ import {
   type PlanProjectFormState,
   type PlanProjectValues,
 } from "@/lib/project-form";
+import { planLimiter } from "@/lib/security/limits";
+import { anonymousMayUseLocalOperator } from "@/lib/security/viewer";
 import { parseInput, planProjectInputSchema } from "@/lib/validation";
-import { selectCurrentUsersRepository } from "@/server/github";
+import { getServerEnv } from "@/lib/env";
+import { currentGithubUserId, selectCurrentUsersRepository } from "@/server/github";
 import { executeStoredProject } from "@/server/execution";
 import { savePlannedProject } from "@/server/plan";
 import { routeStoredProject } from "@/server/routing";
@@ -58,6 +61,13 @@ export async function planProject(
 ): Promise<PlanProjectFormState> {
   const values = valuesFromForm(formData);
   try {
+    const sessionUserId = await currentGithubUserId();
+    if (!planLimiter.allow(sessionUserId ?? "anonymous")) {
+      return planError("Too many plans were started. Wait a few minutes and try again.", {}, values);
+    }
+    if (!sessionUserId && !anonymousMayUseLocalOperator(getServerEnv().NODE_ENV)) {
+      return planError("Connect GitHub before planning a project.", {}, values);
+    }
     const input = parseInput(planProjectInputSchema, {
       goal: formData.get("goal"),
       budget: formData.get("budget"),

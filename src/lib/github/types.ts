@@ -63,7 +63,8 @@ export type GithubFailure =
   | "profile_failed"
   | "unavailable"
   | "database"
-  | "not_connected";
+  | "not_connected"
+  | "rate_limited";
 
 export function projectLinkFromRepository(repository: ConnectedRepositoryRecord): ProjectRepositoryLink {
   return {

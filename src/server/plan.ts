@@ -5,6 +5,8 @@ import { AppError, uniqueRecordMessage } from "@/lib/errors";
 import type { ProjectRepositoryLink } from "@/lib/github/types";
 import { LOCAL_OPERATOR_EMAIL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
 import { getPrisma } from "@/lib/db";
+import { getServerEnv } from "@/lib/env";
+import { anonymousMayUseLocalOperator } from "@/lib/security/viewer";
 import { logger } from "@/lib/logger";
 import { readContextRequests, validatePlan } from "@/lib/planner";
 import { ESTIMATE_NOTE } from "@/lib/routing/config";
@@ -14,7 +16,7 @@ import type { OptimizationMode, PlannedWork } from "@/lib/planner";
 import { excerpt } from "@/lib/format";
 import { slugify } from "@/lib/slug";
 import { idSchema } from "@/lib/validation";
-import { readWorkspace, type LoadState } from "@/server/load";
+import { readScopedWorkspace, type LoadState } from "@/server/load";
 
 const MODE = {
   savings: "SAVINGS",
@@ -136,6 +138,9 @@ export async function savePlannedProject(input: {
       ok: false,
       message: "Connect PostgreSQL before planning a project. Set DATABASE_URL and apply the migration.",
     };
+  }
+  if (!input.link?.userId && !anonymousMayUseLocalOperator(getServerEnv().NODE_ENV)) {
+    return { ok: false, message: "Connect GitHub before planning a project." };
   }
   const validated = validatePlan(input.plan);
   if (!validated.ok) return { ok: false, message: "The plan could not be saved." };
@@ -273,9 +278,9 @@ export async function getPlannedTask(
     return { status: "ready", data: null };
   }
 
-  return readWorkspace(async (prisma) => {
+  return readScopedWorkspace(async (prisma, viewerId) => {
     const task = await prisma.task.findFirst({
-      where: { id: taskId, projectId },
+      where: { id: taskId, projectId, project: { userId: viewerId } },
       include: {
         project: { select: { id: true, name: true } },
         plan: { select: { contextRequests: true } },

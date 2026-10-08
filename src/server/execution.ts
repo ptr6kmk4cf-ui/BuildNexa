@@ -9,10 +9,12 @@ import { getServerEnv } from "@/lib/env";
 import { EXECUTION_CONFIG, runExecution, type ExecutionReport, type ExecutionTask, type TaskExecutionResult } from "@/lib/execution";
 import { logger } from "@/lib/logger";
 import { readContextRequests, TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_TYPES } from "@/lib/planner";
+import { executeLimiter, cancelLimiter } from "@/lib/security/limits";
 import { idSchema } from "@/lib/validation";
 import { createWorkspaceVerifier } from "@/lib/verification";
 import { readEnabledProviderIds, providerFor } from "@/server/ai";
 import { loadHistory } from "@/server/routing";
+import { authorizeOwnedProject } from "@/server/viewer";
 
 const MODE = { SAVINGS: "savings", BALANCED: "balanced", QUALITY: "quality" } as const;
 
@@ -33,6 +35,8 @@ export async function executeStoredProject(
   if (!idSchema.safeParse(projectId).success) return { ok: false, message: "That project could not be found." };
   const prisma = getPrisma();
   if (!prisma) return { ok: false, message: "Connect PostgreSQL before running tasks." };
+  const access = await authorizeOwnedProject(prisma, projectId, executeLimiter);
+  if (!access.ok) return access;
 
   let runId: string | null = null;
   try {
@@ -422,6 +426,8 @@ export async function requestExecutionCancel(
   if (!idSchema.safeParse(projectId).success) return { ok: false, message: "That project could not be found." };
   const prisma = getPrisma();
   if (!prisma) return { ok: false, message: "Connect PostgreSQL before running tasks." };
+  const access = await authorizeOwnedProject(prisma, projectId, cancelLimiter);
+  if (!access.ok) return access;
   try {
     const run = await prisma.executionRun.findFirst({
       where: { projectId, status: "RUNNING" },
