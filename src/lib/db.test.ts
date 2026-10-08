@@ -61,6 +61,10 @@ describe("database initialization", () => {
       "prisma/migrations/20261008240000_task_execution/migration.sql",
       "utf8",
     );
+    const executionHeartbeat = readFileSync(
+      "prisma/migrations/20261008250000_execution_run_heartbeat/migration.sql",
+      "utf8",
+    );
     const models = [...schema.matchAll(/^model (\w+)/gm)].map((match) => match[1]);
     expect(models).toEqual(REQUIRED_MODELS);
     for (const model of REQUIRED_MODELS) {
@@ -87,6 +91,9 @@ describe("database initialization", () => {
     expect(routingMigration).toContain("ALTER TABLE \"ModelDecision\" ALTER COLUMN \"modelId\" DROP NOT NULL");
     expect(schema).toContain("successProbability");
     expect(executionMigration).toContain("CREATE TYPE \"ExecutionState\"");
+    expect(executionHeartbeat).toContain("ExecutionRun_one_running_per_project");
+    expect(executionHeartbeat).toContain("heartbeatAt");
+    expect(schema).toContain("heartbeatAt");
     expect(schema).toContain("ignoredCommand");
     expect(schema).toContain("enum ExecutionState");
     expect(schema).toContain("enum OptimizationMode");

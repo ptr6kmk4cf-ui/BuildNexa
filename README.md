@@ -1,6 +1,6 @@
 # AI Project Optimizer
 
-Phase 6 runs the task plan with the model chosen by routing. Tasks start only after their dependencies complete, and independent tasks can run at the same time. Each run stores the provider, model, token counts, duration, estimated cost, actual cost, reply, and errors. A reply that looks like a shell command is stored and not executed. The repository is not modified and no pull request is opened.
+Phase 6 runs the task plan with the model chosen by routing. Tasks start only after their dependencies complete, and independent tasks can run at the same time. A later run leaves tasks that already completed and continues the rest. Each run stores the provider, model, token counts, duration, estimated cost, actual cost, reply, and errors. A reply that looks like a shell command is stored and not executed. The repository is not modified and no pull request is opened.
 
 ## Architecture
 

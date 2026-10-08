@@ -19,6 +19,9 @@ export async function executeProjectTasks(
     const executed = await executeStoredProject(projectId);
     if (!executed.ok) return { ...initialRunTasksState, message: executed.message };
     refresh();
+    if (executed.taskCount === 0) {
+      return { saved: true, message: "Every task was already completed. The model was not called." };
+    }
     const summary =
       executed.completedCount === executed.taskCount
         ? `Finished ${executed.taskCount} tasks.`

@@ -311,6 +311,7 @@ model ExecutionRun {
   projectId       String
   status          ExecutionRunStatus @default(RUNNING)
   cancelRequested Boolean            @default(false)
+  heartbeatAt     DateTime           @default(now())
   createdAt       DateTime           @default(now())
   finishedAt      DateTime?
 

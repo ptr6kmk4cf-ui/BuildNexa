@@ -4,4 +4,7 @@ export const EXECUTION_CONFIG = {
   concurrency: 2,
   maxResultChars: 8_000,
   maxDependencyChars: 2_000,
+  maxPromptChars: 30_000,
+  outputTokens: 4_096,
+  staleRunMs: 45_000,
 } as const;

@@ -33,9 +33,11 @@ export function createControlledEnvironment(caller: ModelCaller): ExecutionEnvir
         ]);
         const durationMs = Math.max(0, Date.now() - started);
         if (call.signal.aborted) return { ok: false, error: "cancelled", durationMs };
-        if (outcome.kind === "aborted" || timeout.aborted) return { ok: false, error: "timeout", durationMs };
-        if (!outcome.result.ok) return { ok: false, error: outcome.result.error, durationMs };
-        return { ok: true, text: outcome.result.text, usage: outcome.result.usage, durationMs };
+        if (outcome.kind === "result") {
+          if (!outcome.result.ok) return { ok: false, error: outcome.result.error, durationMs };
+          return { ok: true, text: outcome.result.text, usage: outcome.result.usage, durationMs };
+        }
+        return { ok: false, error: "timeout", durationMs };
       } catch {
         const durationMs = Math.max(0, Date.now() - started);
         if (call.signal.aborted) return { ok: false, error: "cancelled", durationMs };

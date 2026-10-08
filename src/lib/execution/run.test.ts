@@ -257,6 +257,80 @@ describe("task execution", () => {
     expect(report.logs.some((entry) => entry.state === "escalated")).toBe(true);
   });
 
+  it("cancels dependents when a task fails and still runs independent work", async () => {
+    const calls: string[] = [];
+    const caller: ModelCaller = async (call) => {
+      const title = call.messages[1]?.content ?? "";
+      const name = title.includes("Task: A") ? "A" : title.includes("Task: B") ? "B" : "C";
+      calls.push(name);
+      if (name === "A") return { ok: false, error: "provider_error" };
+      return ok(`done ${name}`);
+    };
+    const report = await runExecution({
+      maxAttempts: 1,
+      tasks: [
+        task({ id: "a", title: "A", sequence: 0 }),
+        task({ id: "b", title: "B", dependencies: ["a"], sequence: 1 }),
+        task({ id: "c", title: "C", sequence: 2 }),
+      ],
+      caller,
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls.sort()).toEqual(["A", "C"]);
+    expect(report.tasks.find((entry) => entry.taskId === "a")?.state).toBe("failed");
+    expect(report.tasks.find((entry) => entry.taskId === "b")?.state).toBe("cancelled");
+    expect(report.tasks.find((entry) => entry.taskId === "c")?.state).toBe("completed");
+  });
+
+  it("does not call the model again for a task that already completed", async () => {
+    const calls: string[] = [];
+    const caller: ModelCaller = async (call) => {
+      calls.push(call.messages[1]?.content ?? "");
+      return ok("from B");
+    };
+    const report = await runExecution({
+      tasks: [
+        task({ id: "a", title: "A", alreadyCompleted: true, priorResult: "kept\nresult" }),
+        task({ id: "b", title: "B", dependencies: ["a"] }),
+      ],
+      caller,
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("kept\nresult");
+    expect(report.tasks.find((entry) => entry.taskId === "a")).toMatchObject({ state: "completed", skipped: true, result: "kept\nresult" });
+    expect(report.tasks.find((entry) => entry.taskId === "b")?.state).toBe("completed");
+  });
+
+  it("keeps line breaks and limits the prompt sent to the provider", () => {
+    const messages = buildTaskMessages(
+      task({
+        id: "a",
+        title: "A".repeat(40_000),
+        description: "first line\nsecond line",
+      }),
+      [],
+    );
+    expect(messages[1]?.content).toContain("first line\nsecond line");
+    expect(messages[1]?.content.length).toBeLessThanOrEqual(30_000);
+  });
+
+  it("keeps a successful reply when the price function throws", async () => {
+    const report = await runExecution({
+      tasks: [task({ id: "a", title: "A" })],
+      caller: async () => ok("priced later"),
+      price: () => {
+        throw new Error("price failed");
+      },
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(report.tasks[0]).toMatchObject({ state: "completed", result: "priced later", actualCostUsd: null });
+    expect(report.costs).toEqual([]);
+  });
+
   it("rejects a cycle before calling a model", async () => {
     let calls = 0;
     const caller: ModelCaller = async () => {

@@ -6,7 +6,7 @@ import { listRegistryModels } from "@/lib/ai/registry";
 import { isProviderId, providerLabel, type ProviderId } from "@/lib/ai/types";
 import { getPrisma } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
-import { runExecution, type ExecutionReport, type ExecutionTask, type TaskExecutionResult } from "@/lib/execution";
+import { EXECUTION_CONFIG, runExecution, type ExecutionReport, type ExecutionTask, type TaskExecutionResult } from "@/lib/execution";
 import { logger } from "@/lib/logger";
 import { readContextRequests } from "@/lib/planner";
 import { idSchema } from "@/lib/validation";
@@ -18,12 +18,6 @@ const EXECUTION_STATE = {
   completed: "COMPLETED",
   failed: "FAILED",
   escalated: "ESCALATED",
-  cancelled: "CANCELLED",
-} as const;
-
-const TASK_STATUS = {
-  completed: "COMPLETED",
-  failed: "FAILED",
   cancelled: "CANCELLED",
 } as const;
 
@@ -39,9 +33,18 @@ export async function executeStoredProject(
   try {
     const active = await prisma.executionRun.findFirst({
       where: { projectId, status: "RUNNING" },
-      select: { id: true },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, heartbeatAt: true },
     });
-    if (active) return { ok: false, message: "A task run is already in progress." };
+    if (active && Date.now() - active.heartbeatAt.getTime() < EXECUTION_CONFIG.staleRunMs) {
+      return { ok: false, message: "A task run is already in progress." };
+    }
+    if (active) {
+      await prisma.executionRun.update({
+        where: { id: active.id },
+        data: { status: "FAILED", finishedAt: new Date() },
+      });
+    }
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -49,7 +52,7 @@ export async function executeStoredProject(
         plans: { orderBy: { createdAt: "desc" }, take: 1 },
         tasks: {
           orderBy: { sequence: "asc" },
-          take: 100,
+          take: 201,
           include: {
             dependencies: { select: { dependsOnTaskId: true } },
             decisions: {
@@ -57,12 +60,18 @@ export async function executeStoredProject(
               take: 1,
               include: { model: { select: { name: true } } },
             },
+            executions: {
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: 1,
+              select: { state: true, result: true },
+            },
           },
         },
       },
     });
     if (!project) return { ok: false, message: "That project could not be found." };
     if (project.tasks.length === 0) return { ok: false, message: "This project has no tasks to run." };
+    if (project.tasks.length > 200) return { ok: false, message: "This plan has too many tasks to run in one pass." };
 
     const env = getServerEnv();
     const registry = listRegistryModels(env.MODEL_PRICING).models;
@@ -70,13 +79,15 @@ export async function executeStoredProject(
     const tasks = project.tasks.flatMap((task): ExecutionTask[] => {
       const decision = task.decisions[0];
       const selected =
-        decision?.provider && decision.modelSlug && isProviderId(decision.provider)
+        decision?.outcome === "selected" && decision.provider && decision.modelSlug && isProviderId(decision.provider)
           ? {
               provider: decision.provider,
               modelId: decision.modelSlug,
               displayName: decision.model?.name ?? decision.modelSlug,
             }
           : null;
+      const previous = task.executions[0];
+      const alreadyCompleted = previous?.state === "COMPLETED";
       const hint = context.find((request) => request.taskId === task.planKey) ?? null;
       return [
         {
@@ -93,21 +104,36 @@ export async function executeStoredProject(
           context: hint
             ? { pathHints: hint.pathHints, reason: hint.reason, repositoryFullName: hint.repositoryFullName }
             : null,
+          alreadyCompleted,
+          priorResult: alreadyCompleted ? previous?.result ?? null : null,
         },
       ];
     });
+    if (tasks.every((task) => task.alreadyCompleted)) {
+      return { ok: true, taskCount: 0, completedCount: 0 };
+    }
 
-    const run = await prisma.executionRun.create({
-      data: { projectId: project.id, status: "RUNNING" },
-      select: { id: true },
-    });
+    const run = await prisma.executionRun
+      .create({
+        data: { projectId: project.id, status: "RUNNING", heartbeatAt: new Date() },
+        select: { id: true },
+      })
+      .catch((error: unknown) => {
+        if (isRunningConflict(error)) return null;
+        throw error;
+      });
+    if (!run) return { ok: false, message: "A task run is already in progress." };
     runId = run.id;
     const controller = new AbortController();
     const timer = setInterval(() => {
       void prisma.executionRun
-        .findUnique({ where: { id: run.id }, select: { cancelRequested: true } })
+        .update({
+          where: { id: run.id },
+          data: { heartbeatAt: new Date() },
+          select: { cancelRequested: true, status: true },
+        })
         .then((row) => {
-          if (row?.cancelRequested) controller.abort();
+          if (row.cancelRequested || row.status !== "RUNNING") controller.abort();
         })
         .catch(() => undefined);
     }, 400);
@@ -122,6 +148,7 @@ export async function executeStoredProject(
           return providerFor(call.provider, { timeoutMs: call.timeoutMs }).execute({
             modelId: call.modelId,
             messages: call.messages,
+            maxOutputTokens: EXECUTION_CONFIG.outputTokens,
             signal: call.signal,
           });
         },
@@ -146,9 +173,11 @@ export async function executeStoredProject(
 
     const byId = new Map(report.tasks.map((task) => [task.taskId, task]));
     await prisma.$transaction(async (tx) => {
+      const current = await tx.executionRun.findUnique({ where: { id: run.id }, select: { status: true } });
+      if (current?.status !== "RUNNING") throw new Error("run-taken-over");
       for (const task of tasks) {
         const result = byId.get(task.id);
-        if (!result) continue;
+        if (!result || result.skipped) continue;
         const modelId = result.provider && result.modelId
           ? await ensureModel(tx, result.provider, result.modelId, result.displayName ?? result.modelId, registry)
           : null;
@@ -176,13 +205,15 @@ export async function executeStoredProject(
         });
         const taskLogs = report.logs.filter((entry) => entry.taskId === task.id);
         if (taskLogs.length > 0) {
+          const loggedAt = Date.now();
           await tx.executionLog.createMany({
-            data: taskLogs.map((entry) => ({
+            data: taskLogs.map((entry, index) => ({
               executionId: execution.id,
               taskId: task.id,
               state: EXECUTION_STATE[entry.state],
               attempt: entry.attempt,
               message: entry.message,
+              createdAt: new Date(loggedAt + index),
             })),
           });
         }
@@ -219,7 +250,7 @@ export async function executeStoredProject(
         }
         await tx.task.update({
           where: { id: task.id },
-          data: { status: TASK_STATUS[result.state as keyof typeof TASK_STATUS] ?? "FAILED" },
+          data: { status: taskStatus(result.state) },
         });
       }
       await tx.executionRun.update({
@@ -247,10 +278,14 @@ export async function executeStoredProject(
       });
     });
 
-    const completedCount = report.tasks.filter((task) => task.state === "completed").length;
-    logger.info("Task execution recorded", { projectId: project.id, taskCount: report.tasks.length, completedCount });
-    return { ok: true, taskCount: report.tasks.length, completedCount };
+    const ran = report.tasks.filter((task) => !task.skipped);
+    const completedCount = ran.filter((task) => task.state === "completed").length;
+    logger.info("Task execution recorded", { projectId: project.id, taskCount: ran.length, completedCount });
+    return { ok: true, taskCount: ran.length, completedCount };
   } catch (error) {
+    if (error instanceof Error && error.message === "run-taken-over") {
+      return { ok: false, message: "The task run was interrupted." };
+    }
     logger.error("Could not execute project tasks", { error, projectId });
     if (runId) {
       await prisma.executionRun
@@ -336,6 +371,20 @@ async function ensureModel(
     },
   });
   return row.id;
+}
+
+function taskStatus(state: TaskExecutionResult["state"]): "COMPLETED" | "FAILED" | "CANCELLED" {
+  if (state === "completed") return "COMPLETED";
+  if (state === "cancelled") return "CANCELLED";
+  return "FAILED";
+}
+
+function isRunningConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "P2002") return false;
+  const meta = "meta" in error ? error.meta : null;
+  const target = meta && typeof meta === "object" && meta !== null && "target" in meta ? meta.target : null;
+  const fields = Array.isArray(target) ? target.map(String).join(" ") : typeof target === "string" ? target : "";
+  return fields.length === 0 || /projectId|one_running/i.test(fields);
 }
 
 function attemptStatus(result: TaskExecutionResult): "SUCCEEDED" | "FAILED" | "CANCELLED" {

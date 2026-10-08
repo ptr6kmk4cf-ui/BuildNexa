@@ -17,7 +17,7 @@ export function buildTaskMessages(
   dependencyResults: ReadonlyArray<{ title: string; result: string }>,
 ): ProviderMessage[] {
   const lines = [
-    `Task: ${task.title}`,
+    `Task: ${clip(task.title, 500)}`,
     task.description.trim() ? `Description: ${clip(task.description, 4_000)}` : "",
     task.expectedOutput.trim() ? `Expected output: ${clip(task.expectedOutput, 2_000)}` : "",
     task.verificationCriteria.trim() ? `Verification: ${clip(task.verificationCriteria, 2_000)}` : "",
@@ -35,14 +35,20 @@ export function buildTaskMessages(
     }
   }
 
+  const content = cap(lines.join("\n"), EXECUTION_CONFIG.maxPromptChars);
   return [
     { role: "system", content: EXECUTION_SYSTEM_PROMPT },
-    { role: "user", content: lines.join("\n") },
+    { role: "user", content },
   ];
 }
 
 function clip(value: string, max: number): string {
-  const trimmed = value.replace(/\s+/g, " ").trim();
+  const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max - 1)}…`;
+}
+
+function cap(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}…`;
 }

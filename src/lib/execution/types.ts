@@ -28,6 +28,8 @@ export type ExecutionTask = {
   escalation: ExecutionModel | null;
   estimatedCostUsd: string | null;
   context: ExecutionContext | null;
+  alreadyCompleted?: boolean;
+  priorResult?: string | null;
 };
 
 export type ExecutionLogEntry = {
@@ -53,6 +55,7 @@ export type TaskExecutionResult = {
   actualCostUsd: string | null;
   escalated: boolean;
   ignoredCommand: boolean;
+  skipped: boolean;
 };
 
 export type ExecutionCost = {

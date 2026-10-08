@@ -42,8 +42,16 @@ export async function runExecution(input: RunExecutionInput): Promise<ExecutionR
   const costs: ExecutionCost[] = [];
 
   for (const task of input.tasks) {
-    records.set(task.id, blankResult(task));
-    pushLog(logs, task.id, "queued", 0, "Waiting for dependencies.");
+    const record = blankResult(task);
+    records.set(task.id, record);
+    if (task.alreadyCompleted) {
+      record.state = "completed";
+      record.result = task.priorResult ?? null;
+      record.skipped = true;
+      pushLog(logs, task.id, "completed", 0, "Already completed on a previous run. The model was not called.");
+    } else {
+      pushLog(logs, task.id, "queued", 0, "Waiting for dependencies.");
+    }
   }
 
   const inflight = new Map<string, Promise<void>>();
@@ -74,15 +82,27 @@ export async function runExecution(input: RunExecutionInput): Promise<ExecutionR
             maxAttempts,
             timeoutMs,
             price: input.price,
-          }).finally(() => {
-            inflight.delete(task.id);
-            children.delete(task.id);
-          });
+          })
+            .catch(() => {
+              const record = records.get(task.id);
+              if (record && !isTerminal(record.state)) {
+                finish(record, logs, "failed", record.attemptCount, "The task stopped because of an internal error.");
+              }
+            })
+            .finally(() => {
+              inflight.delete(task.id);
+              children.delete(task.id);
+            });
           inflight.set(task.id, promise);
         }
       }
       if (inflight.size === 0) break;
       await Promise.race(inflight.values());
+    }
+    for (const record of records.values()) {
+      if (!isTerminal(record.state)) {
+        finish(record, logs, "failed", record.attemptCount, "The task stopped before it finished.");
+      }
     }
   } finally {
     signal.removeEventListener("abort", onAbort);
@@ -244,7 +264,7 @@ async function attemptModel(input: {
       input.record.ignoredCommand = looksLikeHostCommand(result.text);
       input.record.inputTokens += result.usage.inputTokens;
       input.record.outputTokens += result.usage.outputTokens;
-      const actual = input.price?.(input.model.provider, input.model.modelId, result.usage) ?? null;
+      const actual = quote(input.price, input.model.provider, input.model.modelId, result.usage);
       input.record.actualCostUsd = actual;
       if (actual) {
         input.costs.push({
@@ -314,6 +334,7 @@ function publicResult(record: MutableResult): TaskExecutionResult {
     actualCostUsd: record.actualCostUsd,
     escalated: record.escalated,
     ignoredCommand: record.ignoredCommand,
+    skipped: record.skipped,
   };
 }
 
@@ -335,7 +356,26 @@ function blankResult(task: ExecutionTask): MutableResult {
     actualCostUsd: null,
     escalated: false,
     ignoredCommand: false,
+    skipped: false,
   };
+}
+
+function quote(
+  price: RunExecutionInput["price"],
+  provider: ProviderId,
+  modelId: string,
+  usage: TokenCounts,
+): string | null {
+  if (!price) return null;
+  try {
+    return price(provider, modelId, usage);
+  } catch {
+    return null;
+  }
+}
+
+function isTerminal(state: ExecutionState): boolean {
+  return state === "completed" || state === "failed" || state === "cancelled";
 }
 
 function clampInt(value: number, min: number, max: number): number {
