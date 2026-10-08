@@ -15,9 +15,18 @@ export type GraphTask = {
   dependsOn: string[];
   modelLabel?: string | null;
   executionState?: string | null;
+  escalated?: boolean;
 };
 
-export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: GraphTask[] }) {
+export function TaskGraph({
+  projectId,
+  tasks,
+  runActive,
+}: {
+  projectId: string;
+  tasks: GraphTask[];
+  runActive: boolean;
+}) {
   const titles = new Map(tasks.map((task) => [task.id, task.title]));
   const levels = groupByDependencyDepth(
     tasks.map((task) => ({ ...task, dependencies: task.dependsOn })),
@@ -34,7 +43,7 @@ export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: Grap
           ) : null}
           <ul className={level.length > 1 ? "grid gap-3 sm:grid-cols-2" : "mx-auto grid w-full max-w-xl gap-3"}>
             {level.map((task) => {
-              const marker = taskMarker(task.executionState ?? null, task.status);
+              const marker = taskMarker(task.executionState ?? null, task.status, { runActive });
               const dependencyNames = task.dependsOn.map((id) => titles.get(id) ?? id);
               return (
               <li key={task.id}>
@@ -49,6 +58,7 @@ export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: Grap
                       {task.title}
                     </span>
                     <Badge variant="outline">{marker.label}</Badge>
+                    {task.escalated && marker.label === "Completed" ? <Badge variant="outline">Escalated</Badge> : null}
                     <Badge variant="outline">{labelTaskType(task.type)}</Badge>
                   </span>
                   <span className="mt-2 block text-xs text-muted-foreground">

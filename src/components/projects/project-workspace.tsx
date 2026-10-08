@@ -34,7 +34,7 @@ export async function ProjectWorkspace({ project }: { project: ProjectDetail }) 
   const available = (await listRepositoryOptions()).filter(
     (repository) => !repository.githubRepoId || !linked.has(repository.githubRepoId),
   );
-  const running = project.runs.some((run) => run.status === "RUNNING");
+  const running = project.runs.some((run) => run.active);
   const models = modelRows(project);
 
   return (
@@ -138,7 +138,9 @@ export async function ProjectWorkspace({ project }: { project: ProjectDetail }) 
                 dependsOn: task.dependsOn,
                 modelLabel: task.routing?.modelName ?? (task.routing ? "No model" : null),
                 executionState: task.execution?.state ?? null,
+                escalated: task.execution?.escalated ?? false,
               }))}
+              runActive={running}
             />
           </>
         )}
@@ -157,7 +159,9 @@ export async function ProjectWorkspace({ project }: { project: ProjectDetail }) 
           <ul className="grid gap-2">
             {project.runs.map((run) => (
               <li key={run.id} className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
-                <span className="font-medium">{labelExecutionState(run.status)}</span>
+                <span className="font-medium">
+                  {run.status === "RUNNING" && !run.active ? "Interrupted" : labelExecutionState(run.status)}
+                </span>
                 {run.cancelRequested ? " · Cancel requested" : ""}
                 <span className="mt-1 block text-xs text-muted-foreground">
                   Started {formatTimestamp(run.createdAt)}

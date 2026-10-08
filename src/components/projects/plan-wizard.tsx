@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,7 +15,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import type { PlanPreview } from "@/lib/dashboard/preview";
+import { planDraftKey, reviewedPlanIsCurrent, type PlanPreview } from "@/lib/dashboard/preview";
 import { taskMarker } from "@/lib/dashboard/status";
 import { labelTaskType } from "@/lib/labels";
 import { initialPlanProjectFormState } from "@/lib/project-form";
@@ -55,10 +55,17 @@ export function PlanWizard({
   const [mode, setMode] = useState<(typeof MODES)[number]["value"]>("balanced");
   const [localError, setLocalError] = useState<string | null>(null);
   const [review, setReview] = useState<PlanPreview | null>(null);
+  const [reviewedKey, setReviewedKey] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const reviewRequest = useRef(0);
   const [state, formAction, pending] = useActionState(planProject, initialPlanProjectFormState);
+  const draftKey = planDraftKey({ repositoryId, goal, budget, mode });
+  const reviewCurrent = review?.ok === true && reviewedPlanIsCurrent(reviewedKey, draftKey);
 
   async function loadReview() {
+    const requestId = reviewRequest.current + 1;
+    reviewRequest.current = requestId;
+    const key = planDraftKey({ repositoryId, goal, budget, mode });
     const data = new FormData();
     data.set("goal", goal);
     data.set("budget", budget);
@@ -66,7 +73,9 @@ export function PlanWizard({
     if (repositoryId) data.set("repositoryId", repositoryId);
     setReviewing(true);
     const result = await previewProjectPlan(data);
+    if (requestId !== reviewRequest.current) return null;
     setReview(result);
+    setReviewedKey(result.ok ? key : null);
     setReviewing(false);
     return result;
   }
@@ -77,6 +86,7 @@ export function PlanWizard({
     if (error) return;
     if (step === 3) {
       void loadReview().then((result) => {
+        if (!result) return;
         if (result.ok) setStep(4);
         else setLocalError(result.message);
       });
@@ -104,9 +114,9 @@ export function PlanWizard({
               type="button"
               className={index === step ? "w-full rounded-lg bg-primary px-2 py-2 text-left text-xs font-medium text-primary-foreground" : "w-full rounded-lg border border-border px-2 py-2 text-left text-xs text-muted-foreground"}
               aria-current={index === step ? "step" : undefined}
-              disabled={index > step}
+              disabled={index > step || (index === 5 && !reviewCurrent)}
               onClick={() => {
-                if (index > step) return;
+                if (index > step || (index === 5 && !reviewCurrent)) return;
                 setLocalError(null);
                 if (index === 4) void loadReview();
                 setStep(index);
@@ -273,7 +283,7 @@ export function PlanWizard({
           </dl>
           <div className="flex flex-wrap gap-2">
             <Dialog>
-              <DialogTrigger render={<Button type="button" disabled={pending || !review?.ok}>Start</Button>} />
+              <DialogTrigger render={<Button type="button" disabled={pending || !reviewCurrent}>Start</Button>} />
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Start this project?</DialogTitle>
@@ -292,7 +302,7 @@ export function PlanWizard({
             </Dialog>
             <form action={formAction}>
               <HiddenPlan repositoryId={repositoryId} goal={goal} budget={budget} mode={mode} />
-              <Button type="submit" variant="outline" disabled={pending || !review?.ok}>
+              <Button type="submit" variant="outline" disabled={pending || !reviewCurrent}>
                 {pending ? "Saving..." : "Save plan"}
               </Button>
             </form>
@@ -307,7 +317,7 @@ export function PlanWizard({
               Back
             </Button>
           ) : null}
-          <Button type="button" onClick={continueStep} disabled={step === 4 && !review?.ok}>
+          <Button type="button" onClick={continueStep} disabled={step === 4 && !reviewCurrent}>
             Continue
           </Button>
         </div>

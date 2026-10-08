@@ -16,7 +16,8 @@ import { idSchema, paginationSchema, parseInput, type CreateProjectInput } from 
 import { highestTokenPrice, summarizeCosts, type CostKind, type CostLine, type CostSummary } from "@/lib/budget";
 import { listRegistryModels } from "@/lib/ai/registry";
 import { addMoney } from "@/lib/routing/money";
-import { countCompletedProjects } from "@/lib/dashboard/status";
+import { countCompletedProjects, runIsActive } from "@/lib/dashboard/status";
+import { EXECUTION_CONFIG } from "@/lib/execution/config";
 import { readWorkspace, type LoadState } from "@/server/load";
 
 export type ProjectSummary = {
@@ -175,6 +176,7 @@ export type ProjectDetail = {
     id: string;
     status: string;
     cancelRequested: boolean;
+    active: boolean;
     createdAt: string;
     finishedAt: string | null;
   }>;
@@ -238,7 +240,12 @@ export async function getDashboard(): Promise<LoadState<DashboardData>> {
     const [projectCount, activeExecutions, taskProjects, spend, budgets, records, recentProjects, recentActivity] =
       await Promise.all([
         prisma.project.count(),
-        prisma.executionRun.count({ where: { status: "RUNNING" } }),
+        prisma.executionRun.count({
+          where: {
+            status: "RUNNING",
+            heartbeatAt: { gt: new Date(Date.now() - EXECUTION_CONFIG.staleRunMs) },
+          },
+        }),
         prisma.project.findMany({
           select: {
             tasks: {
@@ -483,6 +490,7 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         id: run.id,
         status: run.status,
         cancelRequested: run.cancelRequested,
+        active: runIsActive(run.status, run.heartbeatAt.toISOString(), Date.now(), EXECUTION_CONFIG.staleRunMs),
         createdAt: run.createdAt.toISOString(),
         finishedAt: run.finishedAt?.toISOString() ?? null,
       })),

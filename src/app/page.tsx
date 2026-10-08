@@ -60,9 +60,9 @@ function DashboardReady({
     { label: "Current budget", value: data.budgetUsd ? formatUsd(data.budgetUsd) : "No budget", hint: "Latest USD limit on each project" },
     {
       label: "Savings",
-      value: data.savings.projectedUsd ? formatUsd(data.savings.projectedUsd) : "Not available",
+      value: "Not measured",
       hint: data.savings.projectedUsd
-        ? "Estimated difference against a premium replay. Measured savings: not measured."
+        ? `Estimated difference ${formatUsd(data.savings.projectedUsd)}. It is not a measured saving.`
         : data.savings.estimatedNote,
     },
   ];

@@ -50,17 +50,16 @@ export function RunTasksForm({ projectId }: { projectId: string }) {
             {runPending ? "Running tasks..." : "Run tasks"}
           </Button>
         </form>
-        <div onClick={() => mark("cancel")}>
-          <ConfirmSubmit
-            action={cancelAction}
-            title="Cancel this run?"
-            description="The running model call stops. Tasks that have not started stay in the plan until you run again. Stored replies are kept."
-            confirmLabel={cancelPending ? "Stopping..." : "Cancel run"}
-            triggerLabel={cancelPending ? "Stopping..." : "Cancel run"}
-            fields={{ projectId }}
-            disabled={cancelPending}
-          />
-        </div>
+        <ConfirmSubmit
+          action={cancelAction}
+          title="Cancel this run?"
+          description="The running model call stops. Tasks that have not started stay in the plan until you run again. Stored replies are kept."
+          confirmLabel={cancelPending ? "Stopping..." : "Cancel run"}
+          triggerLabel={cancelPending ? "Stopping..." : "Cancel run"}
+          fields={{ projectId }}
+          disabled={cancelPending}
+          onSubmit={() => mark("cancel")}
+        />
       </div>
     </div>
   );

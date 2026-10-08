@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { summarizeCosts } from "@/lib/budget/summary";
 import type { CostLine } from "@/lib/budget/types";
-import { countCompletedProjects, taskMarker } from "@/lib/dashboard/status";
-import { previewPlan } from "@/lib/dashboard/preview";
+import { countCompletedProjects, runIsActive, taskMarker } from "@/lib/dashboard/status";
+import { planDraftKey, previewPlan, reviewedPlanIsCurrent } from "@/lib/dashboard/preview";
+import { githubNotice } from "@/lib/github/messages";
 
 const goal = "Add Google and Apple authentication to my application, update the database, create the API endpoints, build the login interface, add tests and prepare a pull request.";
 
@@ -29,6 +30,35 @@ describe("task markers", () => {
     expect(taskMarker("FAILED", "PENDING")).toEqual({ symbol: "⚠", label: "Failed" });
     expect(taskMarker("ESCALATED", "IN_PROGRESS")).toEqual({ symbol: "↗", label: "Escalated" });
     expect(taskMarker("CANCELLED", "PENDING").label).toBe("Cancelled");
+    expect(taskMarker("RUNNING", "PENDING", { runActive: false })).toEqual({ symbol: "⚠", label: "Interrupted" });
+    expect(taskMarker("RUNNING", "PENDING", { runActive: true }).label).toBe("Running");
+  });
+});
+
+describe("active runs", () => {
+  it("ignores a running row whose heartbeat is older than the execution limit", () => {
+    const now = Date.parse("2026-10-08T12:00:45.000Z");
+    expect(runIsActive("RUNNING", "2026-10-08T12:00:00.000Z", now, 45_000)).toBe(false);
+    expect(runIsActive("RUNNING", "2026-10-08T12:00:01.000Z", now, 45_000)).toBe(true);
+    expect(runIsActive("FAILED", "2026-10-08T12:00:44.000Z", now, 45_000)).toBe(false);
+  });
+});
+
+describe("plan review freshness", () => {
+  it("requires another review after the objective changes", () => {
+    const reviewed = planDraftKey({ repositoryId: "", goal: "Add login tests to the API.", budget: "25", mode: "balanced" });
+    const edited = planDraftKey({ repositoryId: "", goal: "Add login tests and a pull request.", budget: "25", mode: "balanced" });
+    expect(reviewedPlanIsCurrent(reviewed, reviewed)).toBe(true);
+    expect(reviewedPlanIsCurrent(reviewed, edited)).toBe(false);
+    expect(reviewedPlanIsCurrent(null, reviewed)).toBe(false);
+  });
+});
+
+describe("project notices", () => {
+  it("shows a saved-plan notice only for known codes", () => {
+    expect(githubNotice("run-failed")).toMatch(/did not finish/);
+    expect(githubNotice("route-failed")).toMatch(/Models were not chosen/);
+    expect(githubNotice("please-start")).toBeNull();
   });
 });
 

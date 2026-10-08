@@ -17,6 +17,8 @@ export const GITHUB_ERROR_MESSAGES: Record<GithubFailure, string> = {
 export const GITHUB_NOTICES = {
   disconnected: "GitHub is disconnected. The saved access token was removed.",
   attached: "Repository attached. No branch was created and no pull request was opened.",
+  "route-failed": "The plan was saved. Models were not chosen. Choose them from Execution before running tasks.",
+  "run-failed": "The plan was saved. The task run did not finish. Its status is in Execution.",
 } as const;
 
 export function githubErrorMessage(code: string | undefined | null): string | null {
@@ -25,6 +27,6 @@ export function githubErrorMessage(code: string | undefined | null): string | nu
 }
 
 export function githubNotice(code: string | undefined | null): string | null {
-  if (code === "disconnected" || code === "attached") return GITHUB_NOTICES[code];
-  return null;
+  if (!code || !(code in GITHUB_NOTICES)) return null;
+  return GITHUB_NOTICES[code as keyof typeof GITHUB_NOTICES];
 }

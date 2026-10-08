@@ -95,13 +95,16 @@ export async function planProject(
         : {}),
     });
     if (!saved.ok) return planError(saved.message, {}, values);
-    await routeStoredProject(saved.id);
+    const routed = await routeStoredProject(saved.id);
+    if (!routed.ok) redirect(`/projects/${saved.id}?notice=route-failed`);
     if (formData.get("startExecution") === "on") {
       try {
-        await executeStoredProject(saved.id);
+        const started = await executeStoredProject(saved.id);
+        if (!started.ok) redirect(`/projects/${saved.id}?notice=run-failed`);
       } catch (error) {
         unstable_rethrow(error);
         logger.error("Could not start the saved project", { error });
+        redirect(`/projects/${saved.id}?notice=run-failed`);
       }
     }
     redirect(`/projects/${saved.id}`);

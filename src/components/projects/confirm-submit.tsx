@@ -21,6 +21,7 @@ export function ConfirmSubmit({
   variant = "destructive",
   fields,
   disabled = false,
+  onSubmit,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   title: string;
@@ -30,6 +31,7 @@ export function ConfirmSubmit({
   variant?: "destructive" | "default";
   fields?: Record<string, string>;
   disabled?: boolean;
+  onSubmit?: () => void;
 }) {
   return (
     <Dialog>
@@ -41,13 +43,13 @@ export function ConfirmSubmit({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <form action={action}>
+        <form action={action} onSubmit={onSubmit}>
           {Object.entries(fields ?? {}).map(([name, value]) => (
             <input key={name} type="hidden" name={name} value={value} />
           ))}
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline">Go back</Button>} />
-            <Button type="submit" variant={variant === "destructive" ? "destructive" : "default"}>
+            <Button type="submit" variant={variant === "destructive" ? "destructive" : "default"} disabled={disabled}>
               {confirmLabel}
             </Button>
           </DialogFooter>

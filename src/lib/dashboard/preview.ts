@@ -12,6 +12,14 @@ export type PlanPreview =
   | { ok: true; name: string; summary: string; tasks: PlanPreviewTask[] }
   | { ok: false; message: string };
 
+export function planDraftKey(input: { repositoryId: string; goal: string; budget: string; mode: string }): string {
+  return [input.repositoryId, input.goal.trim(), input.budget, input.mode].join("\u0000");
+}
+
+export function reviewedPlanIsCurrent(reviewedKey: string | null, draftKey: string): boolean {
+  return reviewedKey !== null && reviewedKey === draftKey;
+}
+
 export function previewPlan(input: PlanRequest): PlanPreview {
   const planned = createPlan(input);
   if (!planned.ok) return { ok: false, message: planned.message };
