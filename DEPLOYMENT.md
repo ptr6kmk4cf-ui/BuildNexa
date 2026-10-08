@@ -58,6 +58,18 @@ The image healthcheck requests `http://127.0.0.1:43123/api/health`. A configured
 
 Put TLS in front of the process. The app itself serves HTTP on 43123.
 
+## Sandbox
+
+Repository commands need bubblewrap (`bwrap`) and a cgroup v2 parent with `cpu`, `memory`, and `pids` delegated. Set `SANDBOX_CGROUP_PARENT` if it is not `/sys/fs/cgroup/apo`.
+
+```bash
+sudo mkdir -p /sys/fs/cgroup/apo
+echo '+cpu +memory +pids' | sudo tee /sys/fs/cgroup/apo/cgroup.subtree_control
+sudo chown -R "$(id -u):$(id -g)" /sys/fs/cgroup/apo
+```
+
+Moving a process into that cgroup may require root when the server itself is already in another cgroup. The server uses `sudo -n` only to write those cgroup files. It does not pass the model’s text to sudo. Without this setup, a repository run stops instead of executing on the host.
+
 ## Workers
 
 There is nothing to configure. A task run blocks the server action that started it. Size the platform request timeout above the model timeout (20 seconds) plus verification (up to 120 seconds per allowlisted check). If the platform cuts the request off, the run stays `RUNNING` until the heartbeat is 45 seconds old. The next execute marks it failed.

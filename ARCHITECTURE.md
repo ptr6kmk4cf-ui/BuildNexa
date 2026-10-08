@@ -20,20 +20,19 @@ Project, cost, activity, and pull-request queries filter on that user id. A task
 
 ## What a run does
 
-`createPlan` builds a task graph from the objective. It does not call a model or edit files. `routeTask` stores a model choice and an estimated cost. `runExecution` calls the selected model through `createControlledEnvironment`, which has no shell and no repository client. The reply is stored.
+`createPlan` builds a task graph from the objective. It does not call a model or edit files. `routeTask` stores a model choice and an estimated cost. `runExecution` calls the selected model through `createControlledEnvironment` when the project has no GitHub repository. That path has no shell and no repository client. The reply is stored.
 
-Verification, when attached, runs `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, or one fixed `tsc --noEmit` invocation. The command list is allowlisted, `shell` is off, the child gets a timeout, and environment variables whose names look like secrets are omitted. The working directory is this application's `process.cwd()`, not a checkout of the user's repository.
+When the project has an `https://github.com` URL, the run clones that repository into a bubblewrap workspace and the model may only return JSON tool calls: read, write, edit, create, delete, list, search, or an approved `run_command`. Those file tools stay inside the workspace. Commands run as `bwrap` with a private mount, user, pid, and network namespace. A cgroup sets memory, CPU, and process limits before the command is allowed to continue. The application directory and secret environment variables are not mounted. The workspace is deleted after the diff is captured. The local branch is not pushed.
+
+Without a repository URL, verification still runs the allowlisted npm checks of this application. With a repository URL, those checks run inside the sandbox against the cloned project, using npm, pnpm, or yarn only when `packageManager` or the matching lockfile says so.
 
 A budget ledger reserves shares for the first call, retries, debugging, escalation, and verification. A call whose estimate does not fit is not sent unless the run was explicitly allowed to exceed the budget. Measured savings stay unmeasured. The dashboard says so.
 
 ## What this process does not do
 
-- It does not clone the selected repository into a sandbox.
-- It does not apply the model reply to files.
-- It does not create a GitHub branch.
-- It does not open a pull request. The pull-request table only shows rows already stored.
+- It does not open a pull request. The pull-request table only shows rows already stored. The sandbox branch stays local.
 - It does not share rate-limit counters across more than one instance.
-- It does not cap CPU or memory with a cgroup. The model call has a timeout. The check process has a timeout. The host still owns the machine limits.
+- It does not run a repository command on the host when bubblewrap or the cgroup limits are unavailable.
 
 A platform request timeout can leave an `ExecutionRun` in `RUNNING` until its heartbeat is older than 45 seconds. The next execute marks that row failed before starting another run.
 

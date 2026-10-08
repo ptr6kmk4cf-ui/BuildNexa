@@ -11,8 +11,11 @@ import { logger } from "@/lib/logger";
 import { readContextRequests, TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_TYPES } from "@/lib/planner";
 import { executeLimiter, cancelLimiter } from "@/lib/security/limits";
 import { idSchema } from "@/lib/validation";
+import { runSandboxModel } from "@/lib/sandbox/agent";
 import { createWorkspaceVerifier } from "@/lib/verification";
 import { readEnabledProviderIds, providerFor } from "@/server/ai";
+import { openProjectSandbox } from "@/server/repository-workspace";
+import type { RepositoryWorkspace } from "@/lib/sandbox/workflow";
 import { loadHistory } from "@/server/routing";
 import { authorizeOwnedProject } from "@/server/viewer";
 
@@ -60,6 +63,7 @@ export async function executeStoredProject(
       include: {
         plans: { orderBy: { createdAt: "desc" }, take: 1 },
         budgets: { orderBy: { createdAt: "desc" }, take: 1 },
+        repositories: { orderBy: { createdAt: "asc" }, take: 1, select: { url: true, defaultBranch: true } },
         tasks: {
           orderBy: { sequence: "asc" },
           take: 201,
@@ -151,7 +155,6 @@ export async function executeStoredProject(
       if (enabled.has(providerId) && key?.trim()) availableProviders.add(providerId);
     }
     const history = await loadHistory(prisma);
-    const verify = createWorkspaceVerifier(process.cwd());
     const budgetUsd = project.budgets[0]?.limitAmount.toString() ?? null;
     const controller = new AbortController();
     const timer = setInterval(() => {
@@ -167,20 +170,56 @@ export async function executeStoredProject(
         .catch(() => undefined);
     }, 400);
 
+    const repository = project.repositories[0];
+    let workspace: RepositoryWorkspace | null = null;
+    if (repository?.url) {
+      const opened = await openProjectSandbox({
+        projectId: project.id,
+        userId: project.userId,
+        url: repository.url,
+        defaultBranch: repository.defaultBranch,
+      });
+      if (!opened.ok) {
+        clearInterval(timer);
+        await prisma.executionRun.update({
+          where: { id: run.id },
+          data: { status: "FAILED", finishedAt: new Date() },
+        });
+        return { ok: false, message: opened.message };
+      }
+      workspace = opened.workspace;
+    }
+    const caller = async (call: {
+      provider: string;
+      modelId: string;
+      messages: { role: "system" | "user" | "assistant"; content: string }[];
+      timeoutMs: number;
+      signal: AbortSignal;
+    }) => {
+      if (!isProviderId(call.provider)) return { ok: false as const, error: "unknown_model" as const };
+      return providerFor(call.provider, { timeoutMs: call.timeoutMs }).execute({
+        modelId: call.modelId,
+        messages: call.messages,
+        maxOutputTokens: EXECUTION_CONFIG.outputTokens,
+        signal: call.signal,
+      });
+    };
+    const verify = workspace ? (signal: AbortSignal) => workspace.verify(signal) : createWorkspaceVerifier(process.cwd());
+
     let report: ExecutionReport;
     try {
       report = await runExecution({
         tasks,
         signal: controller.signal,
-        caller: async (call) => {
-          if (!isProviderId(call.provider)) return { ok: false, error: "unknown_model" };
-          return providerFor(call.provider, { timeoutMs: call.timeoutMs }).execute({
-            modelId: call.modelId,
-            messages: call.messages,
-            maxOutputTokens: EXECUTION_CONFIG.outputTokens,
-            signal: call.signal,
-          });
-        },
+        caller,
+        ...(workspace
+          ? {
+              environment: {
+                kind: "controlled" as const,
+                run: (call: Parameters<typeof runSandboxModel>[0]["call"]) => runSandboxModel({ workspace, call, callModel: caller }),
+              },
+            }
+          : {}),
         price: (provider, modelId, usage) => {
           const match = registry.find((entry) => entry.provider === provider && entry.modelId === modelId);
           if (!match) return null;
@@ -198,6 +237,8 @@ export async function executeStoredProject(
     } catch (error) {
       clearInterval(timer);
       throw error;
+    } finally {
+      await workspace?.close();
     }
 
     const aborted = controller.signal.aborted;

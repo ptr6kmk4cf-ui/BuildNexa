@@ -58,7 +58,7 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
         title={task.title}
         description={
           task.execution
-            ? "The stored reply came from the selected model. It was not run as a command, and the repository was not changed."
+            ? "The stored reply came from the selected model. Prose is not executed. File changes and project commands happen only inside the sandbox."
             : "This task is part of the plan. Run it from the project page after a model has been chosen."
         }
         actions={<TaskStatusBadge status={task.status} />}

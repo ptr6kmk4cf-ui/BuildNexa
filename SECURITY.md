@@ -11,6 +11,7 @@ This note records the boundaries that are enforced in code, and the ones that ar
 - Project, cost, activity, task, and pull-request reads use the viewer from `viewerFromSession`. Production without a session gets no rows. A mutation checks `canAccessProject` before it reads that project's logs.
 - Production without a session cannot create a project as the shared local operator.
 - Verification commands are an allowlist. `spawn` uses `shell: false`. The child timeout comes from `VERIFICATION_CONFIG.commandTimeoutMs`. Secret-like environment variables are omitted.
+- A GitHub repository is cloned into bubblewrap. File tools cannot leave that directory. Commands get memory, CPU, and process limits, no network, and a timeout. The model cannot supply command arguments. The application tree is not mounted.
 - Model calls use `AbortSignal.timeout`. A stale run is not treated as active after 45 seconds.
 - Zod parses plan, project, and pagination input. Unknown GitHub notice codes are not reflected into the page.
 - Responses send `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, and a locked-down `Permissions-Policy`.
@@ -19,8 +20,8 @@ This note records the boundaries that are enforced in code, and the ones that ar
 ## Not enforced
 
 - There is no general password sign-in. The only account is GitHub OAuth, and local development can act as the local operator.
-- The selected repository is not checked out. Model output is not written into a sandbox. Branch creation and pull-request creation are not implemented. The pull-request screen shows stored rows only.
-- Verification runs in the application directory, as the application user, not in a container with CPU or memory caps.
+- Pull-request creation is not implemented. A sandbox run can commit on a local branch and then deletes the workspace after keeping the diff in the task result.
+- Repository commands need a delegated cgroup. On this host that write may use `sudo -n` only for cgroup files under `SANDBOX_CGROUP_PARENT`. The command itself runs as the user inside bubblewrap. If that cgroup cannot be limited, the command is refused.
 - Rate limits reset when the process restarts and are not shared by a second instance.
 - Provider on/off is one workspace row on the local operator. Any signed-in user who can open Settings can change it. The provider API keys are still process-wide.
 - A production callback URL on `http` is rejected only by the operator's GitHub app settings. This code accepts `http` and `https`.

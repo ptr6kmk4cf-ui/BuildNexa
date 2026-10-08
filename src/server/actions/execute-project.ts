@@ -31,7 +31,7 @@ export async function executeProjectTasks(
         : `Finished the run. ${executed.completedCount} of ${executed.taskCount} ${taskWord} completed.`;
     return {
       saved: true,
-      message: `${summary} Replies are stored. No shell command was run, and the repository was not changed.`,
+      message: `${summary} Replies are stored. Repository edits and project commands run only inside the sandbox, and only after a GitHub repository is cloned there. A pull request is not opened.`,
     };
   } catch (error) {
     unstable_rethrow(error);
