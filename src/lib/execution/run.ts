@@ -4,6 +4,7 @@ import { EXECUTION_CONFIG } from "@/lib/execution/config";
 import { createControlledEnvironment, type ExecutionEnvironment, type ModelCaller } from "@/lib/execution/environment";
 import { buildTaskMessages, looksLikeHostCommand } from "@/lib/execution/prompt";
 import type {
+  ExecutionAttempt,
   ExecutionCost,
   ExecutionLogEntry,
   ExecutionModel,
@@ -266,6 +267,14 @@ async function attemptModel(input: {
       input.record.outputTokens += result.usage.outputTokens;
       const actual = quote(input.price, input.model.provider, input.model.modelId, result.usage);
       input.record.actualCostUsd = actual;
+      recordAttempt(input.record, input.model, {
+        status: "succeeded",
+        error: null,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        durationMs: result.durationMs,
+        actualCostUsd: actual,
+      });
       if (actual) {
         input.costs.push({
           taskId: input.task.id,
@@ -285,11 +294,27 @@ async function attemptModel(input: {
     }
 
     if (result.error === "cancelled" || input.signal.aborted) {
+      recordAttempt(input.record, input.model, {
+        status: "cancelled",
+        error: "Cancelled while running.",
+        inputTokens: 0,
+        outputTokens: 0,
+        durationMs: result.durationMs,
+        actualCostUsd: null,
+      });
       finish(input.record, input.logs, "cancelled", attempt, "Cancelled while running.");
       return "done";
     }
 
     input.record.error = failureMessage(result.error);
+    recordAttempt(input.record, input.model, {
+      status: "failed",
+      error: input.record.error,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: result.durationMs,
+      actualCostUsd: null,
+    });
     const canRetry = !input.escalated && index < input.limit - 1 && RETRYABLE.has(result.error);
     if (!canRetry) return "failed";
     pushLog(input.logs, input.task.id, "running", attempt, `${input.record.error} Retrying.`);
@@ -335,6 +360,7 @@ function publicResult(record: MutableResult): TaskExecutionResult {
     escalated: record.escalated,
     ignoredCommand: record.ignoredCommand,
     skipped: record.skipped,
+    attempts: record.attempts.map((entry) => ({ ...entry })),
   };
 }
 
@@ -357,7 +383,26 @@ function blankResult(task: ExecutionTask): MutableResult {
     escalated: false,
     ignoredCommand: false,
     skipped: false,
+    attempts: [],
   };
+}
+
+function recordAttempt(
+  record: MutableResult,
+  model: ExecutionModel,
+  attempt: Omit<ExecutionAttempt, "provider" | "modelId" | "displayName">,
+): void {
+  record.attempts.push({
+    provider: model.provider,
+    modelId: model.modelId,
+    displayName: model.displayName,
+    status: attempt.status,
+    error: attempt.error,
+    inputTokens: attempt.inputTokens,
+    outputTokens: attempt.outputTokens,
+    durationMs: attempt.durationMs,
+    actualCostUsd: attempt.actualCostUsd,
+  });
 }
 
 function quote(

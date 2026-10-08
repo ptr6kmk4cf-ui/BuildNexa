@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { calculateCost } from "@/lib/ai/cost";
 import type { ExecuteResult, TokenCounts } from "@/lib/ai/types";
 import { runExecution } from "@/lib/execution/run";
-import { buildTaskMessages } from "@/lib/execution/prompt";
+import { buildTaskMessages, looksLikeHostCommand } from "@/lib/execution/prompt";
 import type { ExecutionModel, ExecutionTask } from "@/lib/execution/types";
 import type { ModelCaller } from "@/lib/execution/environment";
 
@@ -118,6 +118,7 @@ describe("task execution", () => {
     if (!report.ok) return;
     expect(calls).toBe(3);
     expect(report.tasks[0]).toMatchObject({ state: "completed", attemptCount: 3, result: "recovered" });
+    expect(report.tasks[0]?.attempts.map((entry) => entry.status)).toEqual(["failed", "failed", "succeeded"]);
     expect(report.logs.some((entry) => entry.message.includes("Retrying"))).toBe(true);
   });
 
@@ -133,6 +134,7 @@ describe("task execution", () => {
     if (!report.ok) return;
     expect(report.tasks[0]?.state).toBe("failed");
     expect(report.tasks[0]?.attemptCount).toBe(2);
+    expect(report.tasks[0]?.attempts.map((entry) => entry.status)).toEqual(["failed", "failed"]);
     expect(report.tasks[0]?.error).toMatch(/timed out/i);
     expect(report.costs).toEqual([]);
   });
@@ -222,6 +224,9 @@ describe("task execution", () => {
     expect(report.ok).toBe(true);
     if (!report.ok) return;
     expect(report.tasks[0]?.ignoredCommand).toBe(true);
+    expect(looksLikeHostCommand("curl the documentation for the login form.")).toBe(false);
+    expect(looksLikeHostCommand("PowerShell is not part of this change.")).toBe(false);
+    expect(looksLikeHostCommand("git push origin main")).toBe(true);
     expect(report.tasks[0]?.result).toContain("rm -rf");
     expect(report.hostCommands).toEqual([]);
     const source = readdirSync(join(process.cwd(), "src/lib/execution"))
@@ -254,6 +259,11 @@ describe("task execution", () => {
     if (!report.ok) return;
     expect(calls).toEqual(["weak", "weak", "strong"]);
     expect(report.tasks[0]).toMatchObject({ state: "completed", escalated: true, modelId: "strong", provider: "anthropic" });
+    expect(report.tasks[0]?.attempts.map((entry) => `${entry.modelId}:${entry.status}`)).toEqual([
+      "weak:failed",
+      "weak:failed",
+      "strong:succeeded",
+    ]);
     expect(report.logs.some((entry) => entry.state === "escalated")).toBe(true);
   });
 

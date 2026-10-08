@@ -3,7 +3,7 @@ import { EXECUTION_CONFIG } from "@/lib/execution/config";
 import type { ExecutionTask } from "@/lib/execution/types";
 
 const COMMAND_PATTERN =
-  /(?:^|\n)\s*(?:sudo\s+)?(?:rm\s+-\w*|curl\s+\S|wget\s+\S|bash\s+-|sh\s+-c|powershell\b|chmod\s+\+|git\s+push\b|npm\s+exec\b|npx\s+\S)/i;
+  /(?:^|\n)\s*(?:sudo\s+)?(?:rm\s+-\w*|curl\s+(?:-\w|\S+:\/\/)|wget\s+(?:-\w|\S+:\/\/)|bash\s+-|sh\s+-c|powershell(?:\.exe)?\s+-|chmod\s+\+|git\s+push\b|npm\s+exec\b|npx\s+\S)/i;
 
 export const EXECUTION_SYSTEM_PROMPT =
   "Complete one planned software task. Reply with the written result only. Do not ask the host to run a shell command, write a file, or change a repository. The host will not execute commands from your reply.";

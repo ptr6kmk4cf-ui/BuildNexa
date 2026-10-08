@@ -40,8 +40,8 @@ export async function executeStoredProject(
       return { ok: false, message: "A task run is already in progress." };
     }
     if (active) {
-      await prisma.executionRun.update({
-        where: { id: active.id },
+      await prisma.executionRun.updateMany({
+        where: { id: active.id, status: "RUNNING" },
         data: { status: "FAILED", finishedAt: new Date() },
       });
     }
@@ -159,11 +159,14 @@ export async function executeStoredProject(
           return quote.priced ? quote.amount : null;
         },
       });
-    } finally {
+    } catch (error) {
       clearInterval(timer);
+      throw error;
     }
 
+    const aborted = controller.signal.aborted;
     if (!report.ok) {
+      clearInterval(timer);
       await prisma.executionRun.update({
         where: { id: run.id },
         data: { status: "FAILED", finishedAt: new Date() },
@@ -171,119 +174,137 @@ export async function executeStoredProject(
       return { ok: false, message: report.message };
     }
 
+    const ran = report.tasks.filter((task) => !task.skipped);
     const byId = new Map(report.tasks.map((task) => [task.taskId, task]));
-    await prisma.$transaction(async (tx) => {
-      const current = await tx.executionRun.findUnique({ where: { id: run.id }, select: { status: true } });
-      if (current?.status !== "RUNNING") throw new Error("run-taken-over");
-      for (const task of tasks) {
-        const result = byId.get(task.id);
-        if (!result || result.skipped) continue;
-        const modelId = result.provider && result.modelId
-          ? await ensureModel(tx, result.provider, result.modelId, result.displayName ?? result.modelId, registry)
-          : null;
-        const execution = await tx.taskExecution.create({
-          data: {
-            taskId: task.id,
-            runId: run.id,
-            state: EXECUTION_STATE[result.state],
-            attemptCount: result.attemptCount,
-            provider: result.provider,
-            modelSlug: result.modelId,
-            modelId,
-            result: result.result,
-            errorMessage: result.error,
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens,
-            durationMs: result.durationMs,
-            estimatedCost: result.estimatedCostUsd,
-            actualCost: result.actualCostUsd,
-            escalated: result.escalated,
-            ignoredCommand: result.ignoredCommand,
-            startedAt: result.attemptCount > 0 ? new Date(Date.now() - result.durationMs) : null,
-            finishedAt: new Date(),
-          },
-        });
-        const taskLogs = report.logs.filter((entry) => entry.taskId === task.id);
-        if (taskLogs.length > 0) {
-          const loggedAt = Date.now();
-          await tx.executionLog.createMany({
-            data: taskLogs.map((entry, index) => ({
-              executionId: execution.id,
-              taskId: task.id,
-              state: EXECUTION_STATE[entry.state],
-              attempt: entry.attempt,
-              message: entry.message,
-              createdAt: new Date(loggedAt + index),
-            })),
-          });
-        }
-        const attempt = await tx.taskAttempt.create({
-          data: {
-            taskId: task.id,
-            modelId,
-            status: attemptStatus(result),
-            startedAt: result.attemptCount > 0 ? new Date(Date.now() - result.durationMs) : null,
-            finishedAt: new Date(),
-            errorMessage: result.error,
-          },
-        });
-        if (modelId && result.state === "completed") {
-          await tx.tokenUsage.create({
+    try {
+      await prisma.$transaction(async (tx) => {
+        const current = await tx.executionRun.findUnique({ where: { id: run.id }, select: { status: true } });
+        if (current?.status !== "RUNNING") throw new Error("run-taken-over");
+        const modelIds = new Map<string, string>();
+        const rememberModel = async (provider: ProviderId, modelSlug: string, displayName: string) => {
+          const key = `${provider}:${modelSlug}`;
+          const saved = modelIds.get(key);
+          if (saved) return saved;
+          const id = await ensureModel(tx, provider, modelSlug, displayName, registry);
+          modelIds.set(key, id);
+          return id;
+        };
+        for (const task of tasks) {
+          const result = byId.get(task.id);
+          if (!result || result.skipped) continue;
+          const modelId = result.provider && result.modelId
+            ? await rememberModel(result.provider, result.modelId, result.displayName ?? result.modelId)
+            : null;
+          const execution = await tx.taskExecution.create({
             data: {
-              taskAttemptId: attempt.id,
+              taskId: task.id,
+              runId: run.id,
+              state: EXECUTION_STATE[result.state],
+              attemptCount: result.attemptCount,
+              provider: result.provider,
+              modelSlug: result.modelId,
               modelId,
+              result: result.result,
+              errorMessage: result.error,
               inputTokens: result.inputTokens,
               outputTokens: result.outputTokens,
+              durationMs: result.durationMs,
+              estimatedCost: result.estimatedCostUsd,
+              actualCost: result.actualCostUsd,
+              escalated: result.escalated,
+              ignoredCommand: result.ignoredCommand,
+              startedAt: result.attemptCount > 0 ? new Date(Date.now() - result.durationMs) : null,
+              finishedAt: new Date(),
             },
           });
-        }
-        if (modelId && result.actualCostUsd) {
-          await tx.costRecord.create({
-            data: {
-              projectId: project.id,
-              taskAttemptId: attempt.id,
-              modelId,
-              amount: result.actualCostUsd,
-              currency: "USD",
-            },
+          const taskLogs = report.logs.filter((entry) => entry.taskId === task.id);
+          if (taskLogs.length > 0) {
+            const loggedAt = Date.now();
+            await tx.executionLog.createMany({
+              data: taskLogs.map((entry, index) => ({
+                executionId: execution.id,
+                taskId: task.id,
+                state: EXECUTION_STATE[entry.state],
+                attempt: entry.attempt,
+                message: entry.message,
+                createdAt: new Date(loggedAt + index),
+              })),
+            });
+          }
+          const savedAt = Date.now();
+          for (const [index, call] of result.attempts.entries()) {
+            const attemptModelId = await rememberModel(call.provider, call.modelId, call.displayName);
+            const attempt = await tx.taskAttempt.create({
+              data: {
+                taskId: task.id,
+                modelId: attemptModelId,
+                status: storedAttemptStatus(call.status),
+                startedAt: new Date(savedAt - call.durationMs),
+                finishedAt: new Date(savedAt),
+                errorMessage: call.error,
+                createdAt: new Date(savedAt + index),
+              },
+            });
+            if (call.status === "succeeded") {
+              await tx.tokenUsage.create({
+                data: {
+                  taskAttemptId: attempt.id,
+                  modelId: attemptModelId,
+                  inputTokens: call.inputTokens,
+                  outputTokens: call.outputTokens,
+                },
+              });
+            }
+            if (call.actualCostUsd) {
+              await tx.costRecord.create({
+                data: {
+                  projectId: project.id,
+                  taskAttemptId: attempt.id,
+                  modelId: attemptModelId,
+                  amount: call.actualCostUsd,
+                  currency: "USD",
+                },
+              });
+            }
+          }
+          await tx.task.update({
+            where: { id: task.id },
+            data: { status: taskStatus(result.state) },
           });
         }
-        await tx.task.update({
-          where: { id: task.id },
-          data: { status: taskStatus(result.state) },
-        });
-      }
-      await tx.executionRun.update({
-        where: { id: run.id },
-        data: {
-          status: controller.signal.aborted ? "CANCELLED" : report.tasks.some((task) => task.state === "failed") ? "FAILED" : "COMPLETED",
-          finishedAt: new Date(),
-        },
-      });
-      await tx.project.update({ where: { id: project.id }, data: { status: "ACTIVE" } });
-      await tx.auditLog.create({
-        data: {
-          userId: project.userId,
-          projectId: project.id,
-          action: "SYSTEM",
-          entityType: "TaskExecution",
-          entityId: run.id,
-          metadata: {
-            taskCount: report.tasks.length,
-            completedCount: report.tasks.filter((task) => task.state === "completed").length,
-            failedCount: report.tasks.filter((task) => task.state === "failed").length,
-            cancelledCount: report.tasks.filter((task) => task.state === "cancelled").length,
+        await tx.executionRun.update({
+          where: { id: run.id },
+          data: {
+            status: aborted ? "CANCELLED" : ran.some((task) => task.state === "failed") ? "FAILED" : "COMPLETED",
+            finishedAt: new Date(),
           },
-        },
-      });
-    });
+        });
+        await tx.project.update({ where: { id: project.id }, data: { status: "ACTIVE" } });
+        await tx.auditLog.create({
+          data: {
+            userId: project.userId,
+            projectId: project.id,
+            action: "SYSTEM",
+            entityType: "TaskExecution",
+            entityId: run.id,
+            metadata: {
+              taskCount: ran.length,
+              completedCount: ran.filter((task) => task.state === "completed").length,
+              failedCount: ran.filter((task) => task.state === "failed").length,
+              cancelledCount: ran.filter((task) => task.state === "cancelled").length,
+            },
+          },
+        });
+      }, { maxWait: 5_000, timeout: EXECUTION_CONFIG.saveTimeoutMs });
+    } finally {
+      clearInterval(timer);
+    }
 
-    const ran = report.tasks.filter((task) => !task.skipped);
     const completedCount = ran.filter((task) => task.state === "completed").length;
     logger.info("Task execution recorded", { projectId: project.id, taskCount: ran.length, completedCount });
     return { ok: true, taskCount: ran.length, completedCount };
   } catch (error) {
-    if (error instanceof Error && error.message === "run-taken-over") {
+    if (isTakenOver(error)) {
       return { ok: false, message: "The task run was interrupted." };
     }
     logger.error("Could not execute project tasks", { error, projectId });
@@ -387,10 +408,21 @@ function isRunningConflict(error: unknown): boolean {
   return fields.length === 0 || /projectId|one_running/i.test(fields);
 }
 
-function attemptStatus(result: TaskExecutionResult): "SUCCEEDED" | "FAILED" | "CANCELLED" {
-  if (result.state === "completed") return "SUCCEEDED";
-  if (result.state === "cancelled") return "CANCELLED";
+function storedAttemptStatus(status: "succeeded" | "failed" | "cancelled"): "SUCCEEDED" | "FAILED" | "CANCELLED" {
+  if (status === "succeeded") return "SUCCEEDED";
+  if (status === "cancelled") return "CANCELLED";
   return "FAILED";
+}
+
+function isTakenOver(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== null && current !== undefined && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if ("message" in current && typeof current.message === "string" && current.message.includes("run-taken-over")) return true;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

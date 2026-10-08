@@ -22,10 +22,11 @@ export async function executeProjectTasks(
     if (executed.taskCount === 0) {
       return { saved: true, message: "Every task was already completed. The model was not called." };
     }
+    const taskWord = executed.taskCount === 1 ? "task" : "tasks";
     const summary =
       executed.completedCount === executed.taskCount
-        ? `Finished ${executed.taskCount} tasks.`
-        : `Finished the run. ${executed.completedCount} of ${executed.taskCount} tasks completed.`;
+        ? `Finished ${executed.taskCount} ${taskWord}.`
+        : `Finished the run. ${executed.completedCount} of ${executed.taskCount} ${taskWord} completed.`;
     return {
       saved: true,
       message: `${summary} Replies are stored. No shell command was run, and the repository was not changed.`,

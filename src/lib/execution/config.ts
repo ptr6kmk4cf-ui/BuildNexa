@@ -7,4 +7,5 @@ export const EXECUTION_CONFIG = {
   maxPromptChars: 30_000,
   outputTokens: 4_096,
   staleRunMs: 45_000,
+  saveTimeoutMs: 60_000,
 } as const;

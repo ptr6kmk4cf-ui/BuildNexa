@@ -39,6 +39,18 @@ export type ExecutionLogEntry = {
   message: string;
 };
 
+export type ExecutionAttempt = {
+  provider: ProviderId;
+  modelId: string;
+  displayName: string;
+  status: "succeeded" | "failed" | "cancelled";
+  error: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  actualCostUsd: string | null;
+};
+
 export type TaskExecutionResult = {
   taskId: string;
   state: ExecutionState;
@@ -56,6 +68,7 @@ export type TaskExecutionResult = {
   escalated: boolean;
   ignoredCommand: boolean;
   skipped: boolean;
+  attempts: ExecutionAttempt[];
 };
 
 export type ExecutionCost = {

@@ -3,6 +3,7 @@ export { createControlledEnvironment, type ExecutionEnvironment, type ModelCall,
 export { EXECUTION_SYSTEM_PROMPT, buildTaskMessages, looksLikeHostCommand } from "@/lib/execution/prompt";
 export { runExecution, type RunExecutionInput } from "@/lib/execution/run";
 export type {
+  ExecutionAttempt,
   ExecutionCost,
   ExecutionLogEntry,
   ExecutionModel,

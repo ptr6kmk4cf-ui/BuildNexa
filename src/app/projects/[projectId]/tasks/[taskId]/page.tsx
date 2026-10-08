@@ -187,7 +187,7 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {task.execution.provider ? `${task.execution.provider} · ` : ""}
-                    {task.execution.attemptCount} attempts · {task.execution.durationMs} ms · {task.execution.inputTokens} input tokens · {task.execution.outputTokens} output tokens
+                    {countPhrase(task.execution.attemptCount, "attempt", "attempts")} · {task.execution.durationMs} ms · {countPhrase(task.execution.inputTokens, "input token", "input tokens")} · {countPhrase(task.execution.outputTokens, "output token", "output tokens")}
                     {task.execution.estimatedCostUsd ? ` · Estimated $${task.execution.estimatedCostUsd}` : ""}
                     {task.execution.actualCostUsd ? ` · Actual $${task.execution.actualCostUsd}` : ""}
                   </p>
@@ -252,4 +252,8 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
 function successEstimateLabel(probability: number | null): string {
   if (probability === null || !Number.isFinite(probability)) return "";
   return ` · Success estimate ${Math.round(probability * 100)}%`;
+}
+
+function countPhrase(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
