@@ -1,0 +1,142 @@
+import type { CapabilityScore, ProviderId } from "@/lib/ai/types";
+
+export type ModelDefinition = {
+  provider: ProviderId;
+  modelId: string;
+  displayName: string;
+  contextWindow: number;
+  coding: CapabilityScore;
+  reasoning: CapabilityScore;
+  planning: CapabilityScore;
+  debugging: CapabilityScore;
+  research: CapabilityScore;
+  speed: CapabilityScore;
+  reliability: CapabilityScore;
+  toolSupport: boolean;
+  streaming: boolean;
+};
+
+// Local planning ratings on a 0–5 scale. They are not vendor benchmarks.
+// Prices are intentionally absent; operators set them with MODEL_PRICING.
+export const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
+  {
+    provider: "openai",
+    modelId: "gpt-4.1",
+    displayName: "GPT-4.1",
+    contextWindow: 1_047_576,
+    coding: 5,
+    reasoning: 5,
+    planning: 5,
+    debugging: 5,
+    research: 4,
+    speed: 3,
+    reliability: 5,
+    toolSupport: true,
+    streaming: true,
+  },
+  {
+    provider: "openai",
+    modelId: "gpt-4.1-mini",
+    displayName: "GPT-4.1 mini",
+    contextWindow: 1_047_576,
+    coding: 4,
+    reasoning: 3,
+    planning: 3,
+    debugging: 4,
+    research: 3,
+    speed: 5,
+    reliability: 4,
+    toolSupport: true,
+    streaming: true,
+  },
+  {
+    provider: "openai",
+    modelId: "gpt-4o",
+    displayName: "GPT-4o",
+    contextWindow: 128_000,
+    coding: 4,
+    reasoning: 4,
+    planning: 4,
+    debugging: 4,
+    research: 4,
+    speed: 4,
+    reliability: 4,
+    toolSupport: true,
+    streaming: true,
+  },
+  {
+    provider: "anthropic",
+    modelId: "claude-sonnet-4-5",
+    displayName: "Claude Sonnet 4.5",
+    contextWindow: 200_000,
+    coding: 5,
+    reasoning: 4,
+    planning: 5,
+    debugging: 5,
+    research: 4,
+    speed: 4,
+    reliability: 5,
+    toolSupport: true,
+    streaming: true,
+  },
+  {
+    provider: "anthropic",
+    modelId: "claude-opus-4-1",
+    displayName: "Claude Opus 4.1",
+    contextWindow: 200_000,
+    coding: 5,
+    reasoning: 5,
+    planning: 5,
+    debugging: 5,
+    research: 5,
+    speed: 2,
+    reliability: 5,
+    toolSupport: true,
+    streaming: true,
+  },
+  {
+    provider: "anthropic",
+    modelId: "claude-haiku-4-5",
+    displayName: "Claude Haiku 4.5",
+    contextWindow: 200_000,
+    coding: 3,
+    reasoning: 3,
+    planning: 3,
+    debugging: 3,
+    research: 3,
+    speed: 5,
+    reliability: 4,
+    toolSupport: true,
+    streaming: true,
+  },
+  {
+    provider: "gemini",
+    modelId: "gemini-2.5-pro",
+    displayName: "Gemini 2.5 Pro",
+    contextWindow: 1_048_576,
+    coding: 4,
+    reasoning: 5,
+    planning: 4,
+    debugging: 4,
+    research: 5,
+    speed: 3,
+    reliability: 4,
+    toolSupport: true,
+    streaming: true,
+  },
+  {
+    provider: "gemini",
+    modelId: "gemini-2.5-flash",
+    displayName: "Gemini 2.5 Flash",
+    contextWindow: 1_048_576,
+    coding: 3,
+    reasoning: 3,
+    planning: 3,
+    debugging: 3,
+    research: 3,
+    speed: 5,
+    reliability: 4,
+    toolSupport: true,
+    streaming: true,
+  },
+];

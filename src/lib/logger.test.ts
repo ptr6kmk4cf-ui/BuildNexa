@@ -9,6 +9,9 @@ describe("logging", () => {
     expect(redactString("leaked gho_supersecrettokenvalue client_secret=abc")).toBe(
       "leaked [redacted] client_secret=[redacted]",
     );
+    expect(redactString("openai sk-supersecretvalue123 gemini AIzaSyexamplekeyvalue12")).toBe(
+      "openai [redacted] gemini [redacted]",
+    );
     expect(
       redact({
         password: "supersecret",

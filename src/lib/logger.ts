@@ -3,6 +3,7 @@ import "server-only";
 const SECRET_KEY = /secret|password|token|authorization|cookie|credential|database_url|api[_-]?key/i;
 const POSTGRES_URL = /postgres(?:ql)?:\/\/[^\s'"]+/gi;
 const GITHUB_TOKEN = /\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]+\b/g;
+const PROVIDER_KEY = /\b(?:sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{10,})\b/g;
 const SENSITIVE_PARAM = /(client_secret|access_token|refresh_token)=([^&\s]+)/gi;
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -17,6 +18,7 @@ const ORDER: Record<LogLevel, number> = {
 export function redactString(value: string): string {
   return value
     .replace(GITHUB_TOKEN, "[redacted]")
+    .replace(PROVIDER_KEY, "[redacted]")
     .replace(SENSITIVE_PARAM, "$1=[redacted]")
     .replace(POSTGRES_URL, "postgresql://[redacted]");
 }

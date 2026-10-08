@@ -17,7 +17,7 @@ export default function CostsPage() {
       <PageHeader
         eyebrow="Spend"
         title="Costs"
-        description="Budgets and cost records will show what a successful result actually cost. Nothing is priced until work runs, and this phase does not run work."
+        description="Budgets and cost records show spend that has already been stored. Estimates use the per-million prices you configure. This page does not call a provider."
       />
       <Suspense fallback={<PanelSkeleton cards={2} />}>
         <CostPanel />

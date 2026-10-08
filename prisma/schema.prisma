@@ -1,6 +1,6 @@
 // AI Project Optimizer data model.
-// Phase 2 stores a GitHub connection and repository metadata.
-// Access tokens are ciphertext only. This schema does not open pull requests.
+// Phase 3 stores which model providers a user has enabled.
+// API keys are not stored. GitHub access tokens remain ciphertext only.
 
 generator client {
   provider = "prisma-client"
@@ -84,6 +84,7 @@ model User {
   auditLogs             AuditLog[]
   githubAccount         GithubAccount?
   connectedRepositories ConnectedRepository[]
+  providerPreferences   ProviderPreference[]
 
   @@index([createdAt])
 }
@@ -386,4 +387,18 @@ model ConnectedRepository {
   @@unique([userId, githubRepoId])
   @@index([githubAccountId])
   @@index([userId, fullName])
+}
+
+model ProviderPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
 }

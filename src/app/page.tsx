@@ -20,7 +20,7 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Dashboard"
-        description="Connect GitHub and keep the shape of the work: projects, repositories, tasks, and cost. This phase does not call a model, push code, or open a pull request."
+        description="Choose which model providers are available, and keep projects, repositories, and cost on record. This phase does not route work, call a model from the workspace, push code, or open a pull request."
       />
       <Suspense fallback={<PanelSkeleton cards={4} />}>
         <DashboardPanel />
@@ -60,7 +60,7 @@ function DashboardReady({
   const stats = [
     { label: "Projects", value: String(data.projectCount), hint: "Objectives on record" },
     { label: "Tasks", value: String(data.taskCount), hint: "Not generated in this phase" },
-    { label: "Enabled models", value: String(data.enabledModelCount), hint: "Catalog entries, not live vendors" },
+    { label: "Enabled models", value: String(data.enabledModelCount), hint: "Registry models for enabled providers" },
     { label: "Recorded spend", value: formatUsd(data.recordedSpendUsd), hint: "USD cost records" },
   ];
 
@@ -85,7 +85,7 @@ function DashboardReady({
           {data.recentProjects.length === 0 ? (
             <EmptyState
               title="No projects yet"
-              description="Create a project when you know the objective. The record is the only thing this phase writes."
+              description="Create a project when you know the objective. Provider choices are saved separately in settings."
               action={
                 <Link href="/projects" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
                   Go to projects

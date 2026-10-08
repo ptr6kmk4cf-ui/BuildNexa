@@ -11,6 +11,7 @@ import type { ProjectRepositoryLink } from "@/lib/github/types";
 import { describePermissions, readPermissions } from "@/lib/github/permissions";
 import { slugify } from "@/lib/slug";
 import { idSchema, paginationSchema, parseInput, type CreateProjectInput } from "@/lib/validation";
+import { enabledModelCount, readEnabledProviderIds } from "@/server/ai";
 import { readWorkspace, type LoadState } from "@/server/load";
 
 export type ProjectSummary = {
@@ -169,11 +170,11 @@ async function uniqueSlug(
 
 export async function getDashboard(): Promise<LoadState<DashboardData>> {
   return readWorkspace(async (prisma) => {
-    const [projectCount, taskCount, enabledModelCount, spend, recentProjects, recentActivity] =
+    const [projectCount, taskCount, enabledProviders, spend, recentProjects, recentActivity] =
       await Promise.all([
         prisma.project.count(),
         prisma.task.count(),
-        prisma.model.count({ where: { enabled: true } }),
+        readEnabledProviderIds(prisma),
         prisma.costRecord.aggregate({
           where: { currency: "USD" },
           _sum: { amount: true },
@@ -196,7 +197,7 @@ export async function getDashboard(): Promise<LoadState<DashboardData>> {
     return {
       projectCount,
       taskCount,
-      enabledModelCount,
+      enabledModelCount: enabledModelCount(enabledProviders),
       recordedSpendUsd: decimalString(spend._sum.amount),
       recentProjects: recentProjects.map((project) => ({
         id: project.id,

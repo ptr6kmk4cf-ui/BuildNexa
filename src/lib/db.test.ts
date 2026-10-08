@@ -21,6 +21,7 @@ const REQUIRED_MODELS = [
   "AuditLog",
   "GithubAccount",
   "ConnectedRepository",
+  "ProviderPreference",
 ];
 
 afterEach(async () => {
@@ -40,11 +41,17 @@ describe("database initialization", () => {
       "prisma/migrations/20261008180000_github_connection/migration.sql",
       "utf8",
     );
+    const providerMigration = readFileSync(
+      "prisma/migrations/20261008200000_provider_preferences/migration.sql",
+      "utf8",
+    );
     const models = [...schema.matchAll(/^model (\w+)/gm)].map((match) => match[1]);
     expect(models).toEqual(REQUIRED_MODELS);
     for (const model of REQUIRED_MODELS) {
       if (model === "GithubAccount" || model === "ConnectedRepository") {
         expect(githubMigration).toContain(`CREATE TABLE "${model}"`);
+      } else if (model === "ProviderPreference") {
+        expect(providerMigration).toContain(`CREATE TABLE "${model}"`);
       } else {
         expect(migration).toContain(`CREATE TABLE "${model}"`);
       }
@@ -52,6 +59,8 @@ describe("database initialization", () => {
     expect(githubMigration).toContain("tokenCiphertext");
     expect(githubMigration).not.toContain("accessToken");
     expect(schema).not.toContain("accessToken");
+    expect(schema).not.toContain("apiKey");
+    expect(providerMigration).toContain("ProviderPreference_userId_provider_key");
     expect(schema).toContain("@@unique([userId, githubRepoId])");
     expect(schema).toContain("@@unique([taskId, dependsOnTaskId])");
     expect(schema).toContain("@@unique([userId, slug])");

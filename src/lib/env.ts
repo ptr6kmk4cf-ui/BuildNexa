@@ -22,6 +22,10 @@ export const serverEnvSchema = z.object({
   GITHUB_CALLBACK_URL: optionalEnvString,
   APP_SECRET: optionalEnvString,
   TOKEN_ENCRYPTION_KEY: optionalEnvString,
+  OPENAI_API_KEY: optionalEnvString,
+  ANTHROPIC_API_KEY: optionalEnvString,
+  GEMINI_API_KEY: optionalEnvString,
+  MODEL_PRICING: optionalEnvString,
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -57,6 +61,10 @@ export function parseServerEnv(source: {
   GITHUB_CALLBACK_URL?: string | undefined;
   APP_SECRET?: string | undefined;
   TOKEN_ENCRYPTION_KEY?: string | undefined;
+  OPENAI_API_KEY?: string | undefined;
+  ANTHROPIC_API_KEY?: string | undefined;
+  GEMINI_API_KEY?: string | undefined;
+  MODEL_PRICING?: string | undefined;
 }): ServerEnv {
   const parsed = serverEnvSchema.safeParse({
     NODE_ENV: source.NODE_ENV,
@@ -67,6 +75,10 @@ export function parseServerEnv(source: {
     GITHUB_CALLBACK_URL: source.GITHUB_CALLBACK_URL,
     APP_SECRET: source.APP_SECRET,
     TOKEN_ENCRYPTION_KEY: source.TOKEN_ENCRYPTION_KEY,
+    OPENAI_API_KEY: source.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY,
+    GEMINI_API_KEY: source.GEMINI_API_KEY,
+    MODEL_PRICING: source.MODEL_PRICING,
   });
   if (!parsed.success) {
     throw new EnvValidationError(environmentIssues(parsed.error));

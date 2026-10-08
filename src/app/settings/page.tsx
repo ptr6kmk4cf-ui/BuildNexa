@@ -3,7 +3,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { SetupHint } from "@/components/states/setup-hint";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProviderForm } from "@/components/settings/provider-form";
 import { LOCAL_OPERATOR_NAME } from "@/lib/constants";
+import { loadAiCatalog } from "@/server/ai";
 import { loadGithubPage } from "@/server/github";
 import { getSettings } from "@/server/workspace";
 
@@ -31,7 +33,7 @@ export default function SettingsPage() {
 }
 
 async function SettingsPanel() {
-  const [settings, github] = await Promise.all([getSettings(), loadGithubPage()]);
+  const [settings, github, catalog] = await Promise.all([getSettings(), loadGithubPage(), loadAiCatalog()]);
   const githubStatus =
     github.setup.status === "disabled"
       ? "Not configured"
@@ -42,7 +44,7 @@ async function SettingsPanel() {
           : "Not connected";
 
   const rows = [
-    { label: "Phase", value: "2, GitHub connection" },
+    { label: "Phase", value: "3, model providers" },
     { label: "Database", value: databaseLabel[settings.database] },
     { label: "GitHub", value: githubStatus },
     { label: "Log level", value: settings.logLevel },
@@ -80,6 +82,30 @@ async function SettingsPanel() {
         </CardHeader>
         <CardContent>
           <SetupHint />
+        </CardContent>
+      </Card>
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Model providers</CardTitle>
+          <CardDescription>
+            Choose which providers this workspace may use later. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, and
+            GEMINI_API_KEY in the server environment. Keys are never shown or accepted here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {catalog.status === "unavailable" ? (
+            <p className="text-sm text-muted-foreground">Provider settings could not be loaded from PostgreSQL.</p>
+          ) : (
+            <ProviderForm
+              providers={catalog.data.providers}
+              databaseConfigured={catalog.data.databaseConfigured}
+            />
+          )}
+          {catalog.status === "ready" && catalog.data.pricingIssue ? (
+            <p role="alert" className="mt-4 text-sm text-destructive">
+              {catalog.data.pricingIssue}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

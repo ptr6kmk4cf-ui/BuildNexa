@@ -1,6 +1,6 @@
 # AI Project Optimizer
 
-Phase 2 connects a GitHub account and lets you attach a repository to a project. The workspace still does not call model vendors, route work, push commits, or open pull requests.
+Phase 3 adds model providers. OpenAI, Anthropic, and Gemini share one provider interface and one model registry. The workspace still does not route tasks, call a model from the pages, execute repository code, or modify GitHub.
 
 ## Architecture
 
@@ -10,9 +10,10 @@ Next.js (App Router) renders the workspace. Server Components read PostgreSQL th
 src/app                routes: dashboard, projects, github, models, costs, activity, settings
 src/app/api/health     process health, including database status
 src/app/api/github     OAuth start and callback. Tokens never reach the browser.
-src/server             request-time queries, project actions, and the GitHub store
+src/server             request-time queries, project actions, GitHub, and provider settings
+src/lib/ai             provider interface, adapters, registry, and cost calculation
 src/lib                env, validation, errors, logging, encryption, GitHub API client
-prisma                 schema and the initial migration
+prisma                 schema and migrations
 ```
 
 | Area | Role |
@@ -24,7 +25,13 @@ prisma                 schema and the initial migration
 | Logging | JSON logs. Connection strings and secret-shaped fields are redacted. |
 | UI | Shared shell with dashboard, projects, models, costs, activity, and settings. Data regions show loading, empty, unconfigured, and error states. |
 
-The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `Task`, `TaskDependency`, `TaskAttempt`, `ModelDecision`, `Verification`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, `AuditLog`, `GithubAccount`, and `ConnectedRepository`.
+The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `Task`, `TaskDependency`, `TaskAttempt`, `ModelDecision`, `Verification`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, `AuditLog`, `GithubAccount`, `ConnectedRepository`, and `ProviderPreference`.
+
+`AIProvider` is the only execution surface. `OpenAIProvider`, `AnthropicProvider`, and `GeminiProvider` adapt vendor HTTP responses into that surface. There is no routing engine. Pages read the registry; they do not call `execute`.
+
+The registry in `src/lib/ai/registry-data.ts` holds provider, model id, context window, tool support, streaming, and local 0–5 ratings for coding, reasoning, planning, debugging, research, speed, and reliability. Those ratings are workspace configuration, not vendor benchmarks. Prices are not included. Set `MODEL_PRICING` to a JSON object keyed by `provider:modelId` with `inputPerMillion`, `outputPerMillion`, and optional `cachedInputPerMillion`. Amounts are strings with up to six decimal places. Unknown keys are ignored, and a bad document does not crash the app.
+
+Provider API keys are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GEMINI_API_KEY`. They stay in the server environment. Settings can enable or disable a provider for the signed-in user, or the local operator when no GitHub session exists. The form reports whether a key is present and never renders the value. Saving that choice requires PostgreSQL.
 
 GitHub access tokens are encrypted with AES-256-GCM before they are written. Queries that render pages select the public account fields only. The first successful connection attaches to the local operator (`local-operator@localhost.invalid`) when that record has no GitHub account yet. A second GitHub account gets its own user. Repository lists and selection are filtered by that user, including when a store returns another user's row.
 
@@ -57,6 +64,10 @@ Copy `.env.example` to `.env`. Do not commit `.env`.
 | `GITHUB_CALLBACK_URL` | No | Defaults to `http://127.0.0.1:43123/api/github/callback`. |
 | `APP_SECRET` | No | Signs the OAuth state cookie and the session cookie. At least 32 characters. |
 | `TOKEN_ENCRYPTION_KEY` | No | 32 bytes, base64-encoded. Encrypts the GitHub access token at rest. |
+| `OPENAI_API_KEY` | No | Server-only OpenAI key. Omit it to leave OpenAI unconfigured. |
+| `ANTHROPIC_API_KEY` | No | Server-only Anthropic key. Omit it to leave Anthropic unconfigured. |
+| `GEMINI_API_KEY` | No | Server-only Gemini key. Omit it to leave Gemini unconfigured. |
+| `MODEL_PRICING` | No | JSON per-million USD prices for registry models. Omit it to leave every model unpriced. |
 
 `NODE_ENV` is set by Next.js. Do not put secrets in `NEXT_PUBLIC_*` variables. This app does not define any.
 
@@ -101,7 +112,7 @@ npm start           # production server on port 43123
 
 ## Tests
 
-Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, and disconnect.
+Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, and model capabilities.
 
 ```bash
 npm test

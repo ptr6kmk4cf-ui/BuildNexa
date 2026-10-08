@@ -5,8 +5,7 @@ import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatUsd } from "@/lib/format";
-import { listModelCatalog } from "@/server/workspace";
+import { loadAiCatalog } from "@/server/ai";
 
 export const metadata = { title: "Models" };
 
@@ -16,7 +15,7 @@ export default function ModelsPage() {
       <PageHeader
         eyebrow="Catalog"
         title="Models"
-        description="Providers and models are records the optimizer will be allowed to choose from. No vendor is connected in this phase, and nothing here is called."
+        description="The registry lists each model's context window, capability ratings, and any prices you configured. API keys stay on the server. This page does not call a provider or choose a model."
       />
       <Suspense fallback={<PanelSkeleton cards={2} />}>
         <ModelCatalog />
@@ -26,56 +25,77 @@ export default function ModelsPage() {
 }
 
 async function ModelCatalog() {
-  const result = await listModelCatalog();
+  const result = await loadAiCatalog();
+  if (result.status === "unavailable") {
+    return <WorkspaceBody status="unavailable">{null}</WorkspaceBody>;
+  }
+
+  const { providers, pricingIssue } = result.data;
 
   return (
-    <WorkspaceBody status={result.status}>
-      {result.status === "ready" && result.data.length === 0 ? (
+    <div className="grid gap-4">
+      {pricingIssue ? (
+        <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {pricingIssue}
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Prices stay unset until MODEL_PRICING names a registry model. Capability numbers are local planning ratings from 0 to 5.
+        </p>
+      )}
+      {providers.length === 0 ? (
         <EmptyState
           title="No providers are registered"
-          description="When a later phase adds a provider, its models, context windows, and prices will list here. This screen does not store API keys."
+          description="The model registry is empty. Add a model definition before a later phase can choose one."
         />
-      ) : null}
-      {result.status === "ready" && result.data.length > 0 ? (
-        <div className="grid gap-4">
-          {result.data.map((provider) => (
-            <Card key={provider.id}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  {provider.name}
-                  <Badge variant={provider.enabled ? "default" : "outline"}>
-                    {provider.enabled ? "Enabled" : "Disabled"}
-                  </Badge>
-                </CardTitle>
-                <CardDescription>{provider.slug}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {provider.models.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No models under this provider.</p>
-                ) : (
-                  <ul className="grid gap-3">
-                    {provider.models.map((model) => (
-                      <li key={model.id} className="flex flex-col gap-1 border-b border-border pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{model.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {model.slug}
-                            {model.contextWindow ? ` · ${model.contextWindow.toLocaleString("en-US")} token context` : ""}
-                          </p>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          In {model.inputPricePerMillion ? formatUsd(model.inputPricePerMillion) : "unset"} / Out{" "}
-                          {model.outputPricePerMillion ? formatUsd(model.outputPricePerMillion) : "unset"} per million
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : null}
-    </WorkspaceBody>
+      ) : (
+        providers.map((provider) => (
+          <Card key={provider.id}>
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                {provider.name}
+                <Badge variant={provider.enabled ? "default" : "outline"}>
+                  {provider.enabled ? "Enabled" : "Disabled"}
+                </Badge>
+                <Badge variant="outline">{provider.keyConfigured ? "Key on server" : "No key"}</Badge>
+              </CardTitle>
+              <CardDescription>
+                {provider.enabled
+                  ? "Available for a later selection phase."
+                  : "Turned off in settings. The registry entry stays visible."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {provider.models.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No models under this provider.</p>
+              ) : (
+                <ul className="grid gap-4">
+                  {provider.models.map((model) => (
+                    <li key={model.modelId} className="border-b border-border pb-4 last:border-0 last:pb-0">
+                      <p className="text-sm font-medium">{model.displayName}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{model.modelId}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Context {model.contextWindow.toLocaleString("en-US")} · Coding {model.coding} · Reasoning{" "}
+                        {model.reasoning} · Planning {model.planning} · Debugging {model.debugging} · Research{" "}
+                        {model.research} · Speed {model.speed} · Reliability {model.reliability} ·{" "}
+                        {model.toolSupport ? "Tools" : "No tools"} · {model.streaming ? "Streaming" : "No streaming"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        In {priceLabel(model.pricing.inputPerMillion)} · Out {priceLabel(model.pricing.outputPerMillion)} ·
+                        Cached {priceLabel(model.pricing.cachedInputPerMillion)} per million tokens
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        ))
+      )}
+    </div>
   );
+}
+
+function priceLabel(value: string | null): string {
+  return value ? `${value} USD` : "unset";
 }
