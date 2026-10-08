@@ -55,4 +55,5 @@ export type EscalationInput = {
   budgetUsd: string | null;
   current: EscalationModel;
   routed: RoutingDecision;
+  canAfford?: (kind: "retry" | "escalation", amountUsd: string) => boolean;
 };

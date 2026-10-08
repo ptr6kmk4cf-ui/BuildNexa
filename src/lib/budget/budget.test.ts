@@ -246,6 +246,76 @@ describe("budgeted execution", () => {
     expect(report.costs[0]?.amount).toBe("0.500000");
   });
 
+  it("still runs a cheaper task when another estimate does not fit the initial share", async () => {
+    let calls = 0;
+    const report = await runExecution({
+      tasks: [
+        task({ id: "big", sequence: 0, estimatedCostUsd: "0.800000" }),
+        task({ id: "small", sequence: 1, estimatedCostUsd: "0.200000" }),
+      ],
+      caller: async () => {
+        calls += 1;
+        return ok("shipped");
+      },
+      budgetUsd: "1",
+      price: () => "0.200000",
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls).toBe(1);
+    expect(report.tasks.find((entry) => entry.taskId === "big")).toMatchObject({
+      state: "cancelled",
+    });
+    expect(report.tasks.find((entry) => entry.taskId === "big")?.error).toContain("reserved");
+    expect(report.tasks.find((entry) => entry.taskId === "small")?.state).toBe("completed");
+  });
+
+  it("charges a debugging task's first call to the initial share", async () => {
+    let calls = 0;
+    const report = await runExecution({
+      tasks: [task({ id: "a", type: "debugging", estimatedCostUsd: "0.400000" })],
+      caller: async () => {
+        calls += 1;
+        return ok("found it");
+      },
+      budgetUsd: "1",
+      price: () => "0.400000",
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls).toBe(1);
+    expect(report.tasks[0]?.state).toBe("completed");
+    expect(report.costs.map((cost) => cost.kind)).toEqual(["initial"]);
+  });
+
+  it("stops after a failed check when the retry share cannot cover another call", async () => {
+    let calls = 0;
+    const report = await runExecution({
+      tasks: [task({ id: "a", estimatedCostUsd: "0.200000" })],
+      caller: async () => {
+        calls += 1;
+        return ok("revised");
+      },
+      budgetUsd: "1",
+      price: () => "0.200000",
+      verify: async () => ({
+        outcome: "fail",
+        checks: [{ kind: "test", command: "npm test", output: "failed", exitCode: 1, durationMs: 5, errors: "failed", outcome: "fail" }],
+        durationMs: 5,
+        errors: "failed",
+        summary: "npm test exited 1",
+        costUsd: null,
+      }),
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls).toBe(1);
+    expect(report.tasks[0]?.state).toBe("failed");
+    expect(report.tasks[0]?.error).toContain("Verification did not pass");
+    expect(report.tasks[0]?.error).toContain("share");
+    expect(report.tasks[0]?.error).toContain("Cost incurred");
+  });
+
   it("prices cached tokens from the provider rates", async () => {
     const usage = { inputTokens: 1000, outputTokens: 500, cachedInputTokens: 200 };
     const pricing = { inputPerMillion: "2", outputPerMillion: "8", cachedInputPerMillion: "0.5" };

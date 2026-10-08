@@ -1,6 +1,6 @@
 import type { ProviderId, RegistryModel, TokenCounts } from "@/lib/ai/types";
 import { findCycle, type OptimizationMode } from "@/lib/planner";
-import { approveSpend, commitSpend, createBudgetLedger, type BudgetLedger } from "@/lib/budget/ledger";
+import { approveSpend, commitSpend, createBudgetLedger, poolCanCover, type BudgetLedger } from "@/lib/budget/ledger";
 import type { CostKind } from "@/lib/budget/types";
 import { addMoney } from "@/lib/routing/money";
 import { EXECUTION_CONFIG } from "@/lib/execution/config";
@@ -329,9 +329,14 @@ async function executeVerified(
       escalated: switched,
       feedback,
       holdCompletion: true,
-      costKind: switched ? "escalation" : sameModelAttempts > 1 ? "retry" : input.task.type === "debugging" ? "debug" : "initial",
+      reserveUsd: estimate.estimatedCostUsd,
+      costKind: callKind(switched, sameModelAttempts, input.task.type),
     });
     if (reply === "done") return;
+    if (reply === "unfunded") {
+      stopUnfunded(input.logs, record);
+      return;
+    }
     if (input.signal.aborted) {
       finish(record, input.logs, "cancelled", record.attemptCount, "Cancelled while running.");
       return;
@@ -431,23 +436,21 @@ async function attemptModel(input: {
   holdCompletion?: boolean;
   ledger?: BudgetLedger | null;
   costKind?: CostKind;
-}): Promise<"done" | "failed" | "reply" | "retryable"> {
+  reserveUsd?: string | null;
+}): Promise<"done" | "failed" | "reply" | "retryable" | "unfunded"> {
   for (let index = 0; index < input.limit; index += 1) {
     if (input.signal.aborted) {
       finish(input.record, input.logs, "cancelled", input.record.attemptCount, "Cancelled while running.");
       return "done";
     }
     if (input.ledger?.blocked) {
-      finish(input.record, input.logs, "cancelled", input.record.attemptCount, "Cancelled because the project budget was exhausted.");
-      return "done";
+      return stopForBudget(input, "Cancelled because the project budget was exhausted.", "the project budget was exhausted.");
     }
-    const kind = input.costKind ?? (input.escalated ? "escalation" : index > 0 ? "retry" : input.task.type === "debugging" ? "debug" : "initial");
-    const reserved = input.ledger ? holdBudget(input.ledger, kind, input.task.estimatedCostUsd) : { ok: true as const, amount: null };
-    if (!reserved.ok) {
-      if (input.ledger) input.ledger.blocked = true;
-      finish(input.record, input.logs, "cancelled", input.record.attemptCount, reserved.message);
-      return "done";
-    }
+    const kind = input.costKind ?? callKind(input.escalated, index + 1, input.task.type);
+    const reserved = input.ledger
+      ? holdBudget(input.ledger, kind, input.reserveUsd ?? input.task.estimatedCostUsd)
+      : { ok: true as const, amount: null };
+    if (!reserved.ok) return stopForBudget(input, reserved.message);
     input.record.attemptCount += 1;
     const attempt = input.record.attemptCount;
     const dependencyResults = input.task.dependencies.flatMap((dependency) => {
@@ -647,6 +650,7 @@ function decideForTask(
   input: {
     task: ExecutionTask;
     budgetUsd?: string | null;
+    ledger?: BudgetLedger | null;
     mode?: OptimizationMode;
     models?: readonly RegistryModel[];
     availableProviders?: ReadonlySet<ProviderId>;
@@ -701,7 +705,48 @@ function decideForTask(
     budgetUsd: input.budgetUsd ?? null,
     current: estimate,
     routed,
+    canAfford: input.ledger
+      ? (kind, amount) => {
+          const ledger = input.ledger;
+          if (!ledger) return false;
+          const pool = kind === "retry" && input.task.type === "debugging" ? "debug" : kind;
+          return poolCanCover(ledger, pool, amount);
+        }
+      : undefined,
   });
+}
+
+function callKind(escalated: boolean, sameModelAttempts: number, type: ExecutionTask["type"]): CostKind {
+  if (escalated) return "escalation";
+  if (sameModelAttempts > 1) return type === "debugging" ? "debug" : "retry";
+  return "initial";
+}
+
+function stopForBudget(
+  input: { record: MutableResult; logs: ExecutionLogEntry[]; holdCompletion?: boolean },
+  message: string,
+  reportReason = message,
+): "done" | "unfunded" {
+  input.record.error = reportReason;
+  if (input.holdCompletion && input.record.verifications.length > 0) return "unfunded";
+  finish(input.record, input.logs, "cancelled", input.record.attemptCount, message);
+  return "done";
+}
+
+function stopUnfunded(logs: ExecutionLogEntry[], record: MutableResult): void {
+  const reason = record.error ?? "the remaining budget cannot cover another call.";
+  const verification = record.verifications.at(-1);
+  if (!verification) {
+    finish(record, logs, "cancelled", record.attemptCount, reason);
+    return;
+  }
+  record.verificationStopReason = reason;
+  finish(record, logs, "failed", record.attemptCount, unresolvedReport({
+    verification,
+    attempts: record.attemptCount,
+    costUsd: record.actualCostUsd,
+    reason,
+  }));
 }
 
 function modelKey(model: { provider: string; modelId: string }): string {

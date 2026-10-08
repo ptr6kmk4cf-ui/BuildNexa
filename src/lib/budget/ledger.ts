@@ -48,6 +48,14 @@ export function createBudgetLedger(limitUsd: string, authorizeOverBudget = false
   };
 }
 
+export function poolCanCover(ledger: BudgetLedger, kind: CostKind, amountUsd: string): boolean {
+  if (ledger.blocked) return false;
+  if (ledger.authorizeOverBudget) return true;
+  const amount = scaleMoney(amountUsd);
+  if (amount === null || amount < ZERO) return false;
+  return ledger.pools[kind] >= amount;
+}
+
 export function approveSpend(ledger: BudgetLedger, kind: CostKind, amountUsd: string): SpendDecision {
   const amount = scaleMoney(amountUsd);
   if (amount === null || amount < ZERO) {

@@ -18,7 +18,7 @@ export function decideEscalation(input: EscalationInput): EscalationDecision {
     input.sameModelAttempts <= input.maxSameModelRetries &&
     retryCost !== null &&
     probabilityAllowsRetry(input.current.successProbability) &&
-    fitsBudget(input.spentUsd, retryCost, input.budgetUsd);
+    affordable(input, "retry", retryCost);
   if (canRetry) {
     return {
       action: "retry",
@@ -38,7 +38,7 @@ export function decideEscalation(input: EscalationInput): EscalationDecision {
     selected &&
     nextCost !== null &&
     nextProbability !== null &&
-    fitsBudget(input.spentUsd, nextCost, input.budgetUsd) &&
+    affordable(input, "escalation", nextCost) &&
     worthEscalating(input.current, nextCost, nextProbability)
   ) {
     return {
@@ -57,11 +57,19 @@ export function decideEscalation(input: EscalationInput): EscalationDecision {
   if (input.budgetUsd && retryCost && !fitsBudget(input.spentUsd, retryCost, input.budgetUsd)) {
     return { action: "stop", reason: "another attempt would exceed the project budget." };
   }
+  if (
+    input.canAfford &&
+    retryCost !== null &&
+    !input.canAfford("retry", retryCost) &&
+    (nextCost === null || !input.canAfford("escalation", nextCost))
+  ) {
+    return { action: "stop", reason: "the remaining budget share cannot cover another attempt." };
+  }
   if (!different || !selected) {
     if (
       retryCost !== null &&
       probabilityAllowsRetry(input.current.successProbability) &&
-      fitsBudget(input.spentUsd, retryCost, input.budgetUsd)
+      affordable(input, "retry", retryCost)
     ) {
       return {
         action: "retry",
@@ -76,6 +84,12 @@ export function decideEscalation(input: EscalationInput): EscalationDecision {
 function probabilityAllowsRetry(probability: number | null): boolean {
   if (probability === null) return true;
   return probability >= VERIFICATION_CONFIG.minRetryProbability;
+}
+
+function affordable(input: EscalationInput, kind: "retry" | "escalation", amountUsd: string): boolean {
+  if (!fitsBudget(input.spentUsd, amountUsd, input.budgetUsd)) return false;
+  if (!input.canAfford) return true;
+  return input.canAfford(kind, amountUsd);
 }
 
 function fitsBudget(spentUsd: string, nextUsd: string, budgetUsd: string | null): boolean {

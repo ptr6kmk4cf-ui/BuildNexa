@@ -308,8 +308,8 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         budgets: { orderBy: { createdAt: "desc" }, take: 20 },
         pullRequests: { orderBy: { updatedAt: "desc" }, take: 20 },
         costRecords: {
+          where: { currency: "USD" },
           orderBy: { createdAt: "desc" },
-          take: 500,
           include: costRecordInclude,
         },
       },
@@ -442,27 +442,33 @@ export async function getCosts(): Promise<LoadState<CostOverview>> {
       prisma.costRecord.findMany({
         where: { currency: "USD" },
         orderBy: { createdAt: "desc" },
-        take: 1000,
-        include: costRecordInclude,
+        include: {
+          ...costRecordInclude,
+          project: {
+            select: {
+              name: true,
+              budgets: { where: { currency: "USD" }, orderBy: { createdAt: "desc" }, take: 1 },
+            },
+          },
+        },
       }),
     ]);
     const premium = premiumPricing();
-    const linesByProject = new Map<string, CostLine[]>();
+    const linesByProject = new Map<string, { name: string; limitUsd: string | null; lines: CostLine[] }>();
     for (const record of records) {
-      const lines = linesByProject.get(record.projectId) ?? [];
-      lines.push(toCostLine(record));
-      linesByProject.set(record.projectId, lines);
+      const current = linesByProject.get(record.projectId) ?? {
+        name: record.project.name,
+        limitUsd: record.project.budgets[0]?.limitAmount.toString() ?? null,
+        lines: [],
+      };
+      current.lines.push(toCostLine(record));
+      linesByProject.set(record.projectId, current);
     }
-    const seen = new Set<string>();
-    const projects = budgets.flatMap((budget) => {
-      if (budget.currency !== "USD" || seen.has(budget.projectId)) return [];
-      seen.add(budget.projectId);
-      return [{
-        projectId: budget.project.id,
-        projectName: budget.project.name,
-        ...summarizeCosts(linesByProject.get(budget.projectId) ?? [], budget.limitAmount.toString(), premium),
-      }];
-    });
+    const projects = [...linesByProject.entries()].map(([projectId, project]) => ({
+      projectId,
+      projectName: project.name,
+      ...summarizeCosts(project.lines, project.limitUsd, premium),
+    }));
 
     return {
       totalUsd: decimalString(spend._sum.amount),
