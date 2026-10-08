@@ -7,6 +7,7 @@ import {
   isRisky,
   needsTools,
   primaryAxis,
+  quoteTokens,
   requiredCapability,
   successEstimate,
   tokenPlan,
@@ -33,7 +34,12 @@ export type RouteRequest = {
 
 type PricedCandidate = CandidateAssessment & { estimatedCostUsd: string; successProbability: number };
 
-export function routeTask(request: RouteRequest): RoutingDecision {
+export function routeTask(input: RouteRequest): RoutingDecision {
+  const request: RouteRequest = {
+    ...input,
+    history: input.history ?? [],
+    task: { ...input.task, complexity: clampComplexity(input.task.complexity) },
+  };
   const history = request.history ?? [];
   const minimum = requiredCapability(
     request.task.type,
@@ -44,7 +50,7 @@ export function routeTask(request: RouteRequest): RoutingDecision {
   );
   const tokens = tokenPlan(request.task.type, request.task.complexity);
   const risky = isRisky(request.task.type, request.task.difficulty, request.task.priority);
-  const candidates = request.models.map((model) => assess(model, request, history, minimum, tokens.contextTokens, risky));
+  const candidates = request.models.map((model) => assess(model, request, history, minimum, tokens, risky));
   const eligible = candidates.filter(isPricedEligible);
   const selected = choose(eligible, request, request.models);
   const outcome = selected ? "selected" : outcomeWhenNone(request, candidates);
@@ -70,7 +76,7 @@ function assess(
   request: RouteRequest,
   history: readonly HistorySample[],
   minimum: number,
-  contextTokens: number,
+  tokens: { contextTokens: number; instructionTokens: number; outputTokens: number },
   risky: boolean,
 ): CandidateAssessment {
   const axis = primaryAxis(request.task.type);
@@ -96,15 +102,16 @@ function assess(
   if (!request.availableProviders.has(model.provider)) {
     return { ...blank, successProbability: null, rejection: { code: "provider_unavailable", detail: "Provider is turned off or has no API key." } };
   }
+  const promptTokens = tokens.contextTokens + tokens.instructionTokens;
   if (needsTools(request.task.type) && !model.toolSupport) {
     return { ...blank, rejection: { code: "tools", detail: "This task needs tool support." } };
   }
-  if (contextTokens > model.contextWindow) {
+  if (promptTokens > model.contextWindow) {
     return {
       ...blank,
       rejection: {
         code: "context_window",
-        detail: `Context estimate of ${contextTokens.toLocaleString("en-US")} tokens exceeds the ${model.contextWindow.toLocaleString("en-US")} token window.`,
+        detail: `Prompt estimate of ${promptTokens.toLocaleString("en-US")} tokens exceeds the ${model.contextWindow.toLocaleString("en-US")} token window.`,
       },
     };
   }
@@ -118,7 +125,7 @@ function assess(
     };
   }
 
-  const escalation = escalationModel(model, request, axis);
+  const escalation = escalationModel(model, request, axis, promptTokens, tokens.outputTokens);
   const parts = expectedCost({
     model,
     escalation,
@@ -185,7 +192,7 @@ function compareCandidates(
   const cost = compareMoney(scoredCost(left, mode, models), scoredCost(right, mode, models));
   if (cost !== null && cost !== 0) return cost;
   if (right.successProbability !== left.successProbability) return right.successProbability - left.successProbability;
-  return left.modelId.localeCompare(right.modelId);
+  return left.modelId.localeCompare(right.modelId) || left.provider.localeCompare(right.provider);
 }
 
 function scoredCost(candidate: PricedCandidate, mode: OptimizationMode, models: readonly RegistryModel[]): string {
@@ -194,16 +201,27 @@ function scoredCost(candidate: PricedCandidate, mode: OptimizationMode, models: 
   return multiplyMoney(candidate.estimatedCostUsd, multiplier) ?? candidate.estimatedCostUsd;
 }
 
-function escalationModel(model: RegistryModel, request: RouteRequest, axis: ReturnType<typeof primaryAxis>): RegistryModel | null {
-  const stronger = request.models.filter(
-    (entry) =>
-      request.availableProviders.has(entry.provider) &&
-      entry.modelId !== model.modelId &&
-      axisScore(entry, axis) > axisScore(model, axis) &&
-      (!needsTools(request.task.type) || entry.toolSupport),
-  );
+function escalationModel(
+  model: RegistryModel,
+  request: RouteRequest,
+  axis: ReturnType<typeof primaryAxis>,
+  promptTokens: number,
+  outputTokens: number,
+): RegistryModel | null {
+  const stronger = request.models.filter((entry) => {
+    if (!request.availableProviders.has(entry.provider)) return false;
+    if (entry.provider === model.provider && entry.modelId === model.modelId) return false;
+    if (axisScore(entry, axis) <= axisScore(model, axis)) return false;
+    if (needsTools(request.task.type) && !entry.toolSupport) return false;
+    if (promptTokens > entry.contextWindow) return false;
+    return quoteTokens(entry, promptTokens, outputTokens) !== null;
+  });
   if (stronger.length === 0) return null;
-  return [...stronger].sort((left, right) => axisScore(right, axis) - axisScore(left, axis) || left.modelId.localeCompare(right.modelId))[0] ?? null;
+  return (
+    [...stronger].sort(
+      (left, right) => axisScore(right, axis) - axisScore(left, axis) || left.modelId.localeCompare(right.modelId) || left.provider.localeCompare(right.provider),
+    )[0] ?? null
+  );
 }
 
 function outcomeWhenNone(request: RouteRequest, candidates: readonly CandidateAssessment[]): RoutingOutcome {
@@ -214,7 +232,7 @@ function outcomeWhenNone(request: RouteRequest, candidates: readonly CandidateAs
     (candidate) => candidate.rejection?.code !== "insufficient_capability" && candidate.rejection?.code !== "tools" && candidate.rejection?.code !== "context_window",
   );
   if (capable.length === 0) return "insufficient_capability";
-  if (capable.every((candidate) => candidate.rejection?.code === "unpriced")) return "unpriced";
+  if (capable.some((candidate) => candidate.rejection?.code === "unpriced")) return "unpriced";
   return "below_threshold";
 }
 
@@ -236,26 +254,39 @@ function decisionFactors(
     factors.push({ name: "result", detail: resultDetail(outcome, minimum) });
     return factors;
   }
-  factors.push(...chosen.factors.filter((factor) => factor.name !== "speed"));
-  const alternative = eligible.find((candidate) => candidate.modelId !== chosen.modelId);
-  if (alternative && request.mode === "quality" && isImportant(request.task.difficulty, request.task.priority, request.task.complexity)) {
-    factors.push({
-      name: "choice",
-      detail: `${chosen.displayName} is selected for a higher success estimate within the quality cost band.`,
-    });
-  } else if (alternative) {
-    factors.push({
-      name: "choice",
-      detail: `${chosen.displayName} beats ${alternative.displayName} on expected cost for a successful result.`,
-    });
+  if (!isPricedEligible(chosen)) {
+    factors.push({ name: "result", detail: resultDetail(outcome, minimum) });
+    return factors;
   }
+  factors.push(...chosen.factors);
+  const runnerUp = [...eligible]
+    .sort((left, right) => compareCandidates(left, right, request.mode, request.models))
+    .find((candidate) => !sameModel(candidate, chosen));
+  if (!runnerUp) return factors;
+  factors.push({ name: "choice", detail: choiceDetail(request, chosen, runnerUp) });
   return factors;
+}
+
+function choiceDetail(request: RouteRequest, chosen: PricedCandidate, runnerUp: PricedCandidate): string {
+  if (request.mode === "quality" && isImportant(request.task.difficulty, request.task.priority, request.task.complexity)) {
+    const dollarOrder = compareMoney(chosen.estimatedCostUsd, runnerUp.estimatedCostUsd);
+    if (dollarOrder !== null && dollarOrder > 0) {
+      return `${chosen.displayName} is selected for a higher success estimate within the quality cost band, ahead of the cheaper ${runnerUp.displayName}.`;
+    }
+    return `${chosen.displayName} has the lowest expected cost among models in the quality band.`;
+  }
+  const dollarOrder = compareMoney(chosen.estimatedCostUsd, runnerUp.estimatedCostUsd);
+  const scoreOrder = compareMoney(scoredCost(chosen, request.mode, request.models), scoredCost(runnerUp, request.mode, request.models));
+  if (dollarOrder !== null && dollarOrder > 0 && scoreOrder !== null && scoreOrder < 0) {
+    return `${chosen.displayName} ranks ahead of ${runnerUp.displayName} after the balanced speed penalty. Its expected cost is higher before that penalty.`;
+  }
+  return `${chosen.displayName} beats ${runnerUp.displayName} on expected cost for a successful result.`;
 }
 
 function resultDetail(outcome: RoutingOutcome, minimum: number): string {
   if (outcome === "provider_unavailable") return "No enabled provider with an API key has a model in this set.";
   if (outcome === "insufficient_capability") return `No available model meets the capability minimum of ${minimum}, including tool support and context size.`;
-  if (outcome === "unpriced") return "Capable models are missing prices, so a cost cannot be estimated.";
+  if (outcome === "unpriced") return "At least one capable model has no price, so expected cost cannot be compared.";
   return "Models cleared the capability check, but none reached the success-estimate floor.";
 }
 
@@ -297,6 +328,15 @@ function labelAxis(axis: ReturnType<typeof primaryAxis>): string {
   if (axis === "planning") return "Planning";
   if (axis === "research") return "Research";
   return "Reasoning";
+}
+
+function sameModel(left: { provider: string; modelId: string }, right: { provider: string; modelId: string }): boolean {
+  return left.provider === right.provider && left.modelId === right.modelId;
+}
+
+function clampComplexity(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(5, Math.max(1, Math.round(value)));
 }
 
 function percent(probability: number): string {

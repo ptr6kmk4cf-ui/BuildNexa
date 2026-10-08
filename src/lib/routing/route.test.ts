@@ -155,6 +155,136 @@ describe("model routing", () => {
     expect(route({ ...input, mode: "quality" }).selected?.modelId).toBe("strong-reasoner");
   });
 
+  it("names the cheaper model when quality pays more for a higher success estimate", () => {
+    const steady = model({
+      provider: "anthropic",
+      modelId: "steady-coder",
+      displayName: "Steady coder",
+      coding: 4,
+      reliability: 4,
+      speed: 4,
+      pricing: { inputPerMillion: "3", outputPerMillion: "15", cachedInputPerMillion: null },
+    });
+    const stronger = model({
+      provider: "gemini",
+      modelId: "stronger-coder",
+      displayName: "Stronger coder",
+      coding: 5,
+      reliability: 5,
+      speed: 3,
+      pricing: { inputPerMillion: "6", outputPerMillion: "30", cachedInputPerMillion: null },
+    });
+    const decision = route({
+      type: "coding",
+      difficulty: "low",
+      complexity: 4,
+      priority: "high",
+      mode: "quality",
+      models: [steady, stronger],
+    });
+    expect(decision.selected?.modelId).toBe("stronger-coder");
+    expect(decision.factors.find((factor) => factor.name === "choice")?.detail).toBe(
+      "Stronger coder is selected for a higher success estimate within the quality cost band, ahead of the cheaper Steady coder.",
+    );
+  });
+
+  it("explains a balanced choice that the speed penalty moved", () => {
+    const slow = model({
+      provider: "openai",
+      modelId: "slow-writer",
+      displayName: "Slow writer",
+      research: 3,
+      reliability: 3,
+      speed: 1,
+      pricing: { inputPerMillion: "1", outputPerMillion: "4", cachedInputPerMillion: null },
+    });
+    const fast = model({
+      provider: "anthropic",
+      modelId: "fast-writer",
+      displayName: "Fast writer",
+      research: 3,
+      reliability: 3,
+      speed: 5,
+      pricing: { inputPerMillion: "1.08", outputPerMillion: "4.32", cachedInputPerMillion: null },
+    });
+    const decision = route({
+      type: "documentation",
+      difficulty: "low",
+      complexity: 2,
+      mode: "balanced",
+      models: [slow, fast],
+    });
+    expect(decision.selected?.modelId).toBe("fast-writer");
+    const slowCost = decision.candidates.find((candidate) => candidate.modelId === "slow-writer")?.estimatedCostUsd;
+    expect(slowCost).toBeTruthy();
+    expect(Number(decision.estimatedCostUsd)).toBeGreaterThan(Number(slowCost));
+    expect(decision.factors.find((factor) => factor.name === "choice")?.detail).toContain("balanced speed penalty");
+    expect(decision.factors.find((factor) => factor.name === "choice")?.detail).toContain("Slow writer");
+  });
+
+  it("names the other provider when two models share an id", () => {
+    const open = model({
+      provider: "openai",
+      modelId: "shared",
+      displayName: "Open shared",
+      research: 3,
+      reliability: 3,
+      speed: 4,
+      pricing: { inputPerMillion: "1", outputPerMillion: "4", cachedInputPerMillion: null },
+    });
+    const anthropic = model({
+      provider: "anthropic",
+      modelId: "shared",
+      displayName: "Anthropic shared",
+      research: 3,
+      reliability: 3,
+      speed: 4,
+      pricing: { inputPerMillion: "2", outputPerMillion: "8", cachedInputPerMillion: null },
+    });
+    const decision = route({
+      type: "documentation",
+      difficulty: "low",
+      complexity: 2,
+      models: [open, anthropic],
+    });
+    expect(decision.selected).toMatchObject({ provider: "openai", modelId: "shared" });
+    expect(decision.factors.find((factor) => factor.name === "choice")?.detail).toContain("Anthropic shared");
+  });
+
+  it("says the quality winner is the cheapest when it also has the lowest expected cost", () => {
+    const budget = model({
+      provider: "openai",
+      modelId: "budget-writer",
+      displayName: "Budget writer",
+      research: 5,
+      reasoning: 5,
+      reliability: 5,
+      speed: 3,
+      pricing: { inputPerMillion: "1", outputPerMillion: "4", cachedInputPerMillion: null },
+    });
+    const premium = model({
+      provider: "anthropic",
+      modelId: "premium-writer",
+      displayName: "Premium writer",
+      research: 5,
+      reasoning: 5,
+      reliability: 5,
+      speed: 3,
+      pricing: { inputPerMillion: "3", outputPerMillion: "12", cachedInputPerMillion: null },
+    });
+    const decision = route({
+      type: "documentation",
+      difficulty: "high",
+      complexity: 2,
+      mode: "quality",
+      models: [budget, premium],
+    });
+    expect(decision.selected?.modelId).toBe("budget-writer");
+    expect(decision.factors.find((factor) => factor.name === "choice")?.detail).toBe(
+      "Budget writer has the lowest expected cost among models in the quality band.",
+    );
+  });
+
   it("reports provider unavailable when no provider can be called", () => {
     const decision = route({
       type: "coding",
@@ -201,6 +331,89 @@ describe("model routing", () => {
     expect(decision.selected?.modelId).toBe("mid-coder");
     const cheapCandidate = decision.candidates.find((candidate) => candidate.modelId === "cheap-coder");
     expect(cheapCandidate?.rejection?.code).toBe("below_success_floor");
+  });
+
+  it("reports unpriced when a capable model has no price and another misses the floor", () => {
+    const unpriced = model({
+      provider: "openai",
+      modelId: "unpriced-coder",
+      displayName: "Unpriced coder",
+      coding: 5,
+      pricing: { inputPerMillion: null, outputPerMillion: null, cachedInputPerMillion: null },
+    });
+    const shaky = model({
+      provider: "anthropic",
+      modelId: "shaky-coder",
+      displayName: "Shaky coder",
+      coding: 3,
+      reliability: 3,
+      pricing: { inputPerMillion: "3", outputPerMillion: "15", cachedInputPerMillion: null },
+    });
+    const decision = route({
+      type: "coding",
+      difficulty: "low",
+      complexity: 2,
+      mode: "quality",
+      models: [unpriced, shaky],
+      available: new Set<ProviderId>(["openai", "anthropic"]),
+    });
+    expect(decision.candidates.find((candidate) => candidate.modelId === "shaky-coder")?.rejection?.code).toBe("below_success_floor");
+    expect(decision.outcome).toBe("unpriced");
+    expect(decision.selected).toBeNull();
+  });
+
+  it("does not escalate through a model that cannot hold the prompt or has no price", () => {
+    const narrow = model({
+      provider: "gemini",
+      modelId: "narrow-reasoner",
+      displayName: "Narrow reasoner",
+      coding: 5,
+      contextWindow: 100,
+      pricing: { inputPerMillion: "100", outputPerMillion: "400", cachedInputPerMillion: null },
+    });
+    const unpricedStrong = model({
+      provider: "anthropic",
+      modelId: "unpriced-strong",
+      displayName: "Unpriced strong",
+      coding: 5,
+      pricing: { inputPerMillion: null, outputPerMillion: null, cachedInputPerMillion: null },
+    });
+    const alone = route({
+      type: "coding",
+      difficulty: "low",
+      complexity: 2,
+      models: [cheap],
+      available: new Set<ProviderId>(["openai"]),
+    });
+    const withNarrow = route({
+      type: "coding",
+      difficulty: "low",
+      complexity: 2,
+      models: [cheap, narrow],
+      available: new Set<ProviderId>(["openai", "gemini"]),
+    });
+    const withUnpriced = route({
+      type: "coding",
+      difficulty: "low",
+      complexity: 2,
+      models: [cheap, unpricedStrong],
+      available: new Set<ProviderId>(["openai", "anthropic"]),
+    });
+    expect(withNarrow.candidates.find((candidate) => candidate.modelId === "narrow-reasoner")?.rejection?.code).toBe("context_window");
+    expect(withNarrow.estimatedCostUsd).toBe(alone.estimatedCostUsd);
+    expect(withUnpriced.estimatedCostUsd).toBe(alone.estimatedCostUsd);
+  });
+
+  it("clamps complexity before scoring", () => {
+    const bounded = route({ type: "documentation", difficulty: "low", complexity: 5 });
+    const wild = route({ type: "documentation", difficulty: "low", complexity: 99 });
+    const missing = route({ type: "documentation", difficulty: "low", complexity: Number.NaN });
+    const simplest = route({ type: "documentation", difficulty: "low", complexity: 1 });
+    expect(wild.estimatedCostUsd).toBe(bounded.estimatedCostUsd);
+    expect(wild.successProbability).toBe(bounded.successProbability);
+    expect(missing.estimatedCostUsd).toBe(simplest.estimatedCostUsd);
+    expect(missing.successProbability).toBe(simplest.successProbability);
+    expect(Number.isFinite(missing.successProbability)).toBe(true);
   });
 
   it("refuses to invent a price when capable models are unpriced", () => {

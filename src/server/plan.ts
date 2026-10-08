@@ -246,7 +246,7 @@ export async function getPlannedTask(
           include: { dependsOn: { select: { id: true, title: true, planKey: true } } },
         },
         decisions: {
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 1,
           include: { model: { select: { name: true } } },
         },
@@ -280,7 +280,7 @@ export async function getPlannedTask(
             modelSlug: task.decisions[0].modelSlug,
             mode: task.decisions[0].optimizationMode,
             estimatedCostUsd: task.decisions[0].estimatedCost?.toString() ?? null,
-            successProbability: task.decisions[0].successProbability === null ? null : Number(task.decisions[0].successProbability.toString()),
+            successProbability: readProbability(task.decisions[0].successProbability),
             reason: task.decisions[0].reason,
             factors: readFactors(task.decisions[0].factors),
             candidates: readCandidateViews(task.decisions[0].candidates),
@@ -289,6 +289,12 @@ export async function getPlannedTask(
         : null,
     };
   });
+}
+
+function readProbability(value: { toString(): string } | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value.toString());
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 async function uniqueSlug(tx: Pick<PrismaClient, "project">, userId: string, name: string): Promise<string> {

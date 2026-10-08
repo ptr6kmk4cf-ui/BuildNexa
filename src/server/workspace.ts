@@ -283,7 +283,11 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
           take: 100,
           include: {
             dependencies: { select: { dependsOnTaskId: true } },
-            decisions: { orderBy: { createdAt: "desc" }, take: 1, include: { model: { select: { name: true } } } },
+            decisions: {
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: 1,
+              include: { model: { select: { name: true } } },
+            },
           },
         },
         budgets: { orderBy: { createdAt: "desc" }, take: 20 },

@@ -1,6 +1,7 @@
 import type { DecisionFactor } from "@/lib/routing/types";
 
 export type DecisionCandidateView = {
+  provider: string;
   displayName: string;
   modelId: string;
   eligible: boolean;
@@ -26,6 +27,7 @@ export function readCandidateViews(value: unknown): DecisionCandidateView[] {
     if (!isRecord(entry) || typeof entry.modelId !== "string" || typeof entry.displayName !== "string") continue;
     const rejection = isRecord(entry.rejection) && typeof entry.rejection.detail === "string" ? entry.rejection.detail : null;
     candidates.push({
+      provider: typeof entry.provider === "string" ? entry.provider : "",
       displayName: entry.displayName,
       modelId: entry.modelId,
       eligible: entry.eligible === true,

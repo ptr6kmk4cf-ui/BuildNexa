@@ -7,9 +7,8 @@ import { getPrisma } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_TYPES } from "@/lib/planner/types";
-import { summarizeHistory, type PerformanceObservation } from "@/lib/routing/history";
 import { routeTask } from "@/lib/routing/route";
-import type { RoutingDecision } from "@/lib/routing/types";
+import type { HistorySample, RoutingDecision } from "@/lib/routing/types";
 import { idSchema } from "@/lib/validation";
 import { readEnabledProviderIds } from "@/server/ai";
 
@@ -40,7 +39,7 @@ export async function routeStoredProject(
       gemini: env.GEMINI_API_KEY,
     });
     const models = listRegistryModels(env.MODEL_PRICING).models;
-    const history = summarizeHistory(await loadObservations(prisma));
+    const history = await loadHistory(prisma);
     const mode = MODE[project.optimizationMode];
     const decisions: RoutingDecision[] = [];
 
@@ -90,6 +89,7 @@ export async function routeStoredProject(
       }
       await tx.auditLog.create({
         data: {
+          userId: project.userId,
           projectId: project.id,
           action: "SYSTEM",
           entityType: "ModelDecision",
@@ -149,29 +149,35 @@ async function ensureModel(
   return row.id;
 }
 
-async function loadObservations(prisma: NonNullable<ReturnType<typeof getPrisma>>): Promise<PerformanceObservation[]> {
-  const attempts = await prisma.taskAttempt.findMany({
-    where: { status: { in: ["SUCCEEDED", "FAILED"] }, modelId: { not: null } },
-    orderBy: { createdAt: "desc" },
-    take: 500,
-    include: {
-      model: { include: { provider: { select: { slug: true } } } },
-      task: { select: { type: true } },
-    },
-  });
-  const observations: PerformanceObservation[] = [];
-  for (const attempt of attempts) {
-    const provider = attempt.model?.provider.slug;
-    const taskType = asMember(TASK_TYPES, attempt.task.type.toLowerCase());
-    if (!provider || !isProviderId(provider) || !attempt.model || !taskType) continue;
-    observations.push({
-      provider,
-      modelId: attempt.model.slug,
-      taskType,
-      succeeded: attempt.status === "SUCCEEDED",
-    });
+async function loadHistory(prisma: NonNullable<ReturnType<typeof getPrisma>>): Promise<HistorySample[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{ provider: string; modelSlug: string; taskType: string; attempts: number | bigint; successes: number | bigint }>
+  >`
+    SELECT p.slug AS "provider",
+           m.slug AS "modelSlug",
+           t.type::text AS "taskType",
+           COUNT(*)::int AS attempts,
+           COUNT(*) FILTER (WHERE a.status = 'SUCCEEDED')::int AS successes
+    FROM "TaskAttempt" a
+    INNER JOIN "Model" m ON m.id = a."modelId"
+    INNER JOIN "Provider" p ON p.id = m."providerId"
+    INNER JOIN "Task" t ON t.id = a."taskId"
+    WHERE a.status IN ('SUCCEEDED', 'FAILED')
+      AND a."modelId" IS NOT NULL
+    GROUP BY p.slug, m.slug, t.type
+  `;
+  const samples: HistorySample[] = [];
+  for (const row of rows) {
+    if (!isProviderId(row.provider)) continue;
+    const taskType = asMember(TASK_TYPES, row.taskType.toLowerCase());
+    if (!taskType) continue;
+    const attempts = Number(row.attempts);
+    const successes = Number(row.successes);
+    if (!Number.isInteger(attempts) || attempts < 1) continue;
+    if (!Number.isInteger(successes) || successes < 0 || successes > attempts) continue;
+    samples.push({ provider: row.provider, modelId: row.modelSlug, taskType, attempts, successes });
   }
-  return observations;
+  return samples;
 }
 
 function availableProviders(

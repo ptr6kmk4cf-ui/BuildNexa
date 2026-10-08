@@ -137,9 +137,7 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
                   <p className="text-xs text-muted-foreground">
                     {labelOptimizationMode(task.decision.mode)}
                     {task.decision.estimatedCostUsd ? ` · Estimated $${task.decision.estimatedCostUsd}` : ""}
-                    {task.decision.successProbability !== null
-                      ? ` · Success estimate ${Math.round(task.decision.successProbability * 100)}%`
-                      : ""}
+                    {successEstimateLabel(task.decision.successProbability)}
                   </p>
                   <ul className="grid gap-2">
                     {task.decision.factors.map((factor) => (
@@ -151,7 +149,7 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
                   {task.decision.candidates.length > 0 ? (
                     <ul className="grid gap-2 border-t border-border pt-3">
                       {task.decision.candidates.map((candidate) => (
-                        <li key={candidate.modelId} className="text-xs text-muted-foreground">
+                        <li key={`${candidate.provider}:${candidate.modelId}`} className="text-xs text-muted-foreground">
                           {candidate.displayName}
                           {candidate.eligible ? " · eligible" : ""}
                           {candidate.detail ? ` · ${candidate.detail}` : ""}
@@ -199,4 +197,9 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
       </div>
     </>
   );
+}
+
+function successEstimateLabel(probability: number | null): string {
+  if (probability === null || !Number.isFinite(probability)) return "";
+  return ` · Success estimate ${Math.round(probability * 100)}%`;
 }
