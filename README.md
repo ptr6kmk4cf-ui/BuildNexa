@@ -1,5 +1,7 @@
 # AI Project Optimizer
 
+Phase 10 is the workspace around that backend: the dashboard, project sections, live task status, task detail, costs, and a six-step project start. Every figure is read from stored projects, runs, and cost records.
+
 Phase 9 spends a project budget on the lowest expected cost per successful result, not the lowest token price. The approved amount reserves shares for retries, debugging, escalation, and verification. A call whose estimate does not fit the remaining share is not sent, unless the run was explicitly allowed to exceed the budget. Actual provider cost, the estimated premium-token baseline, the estimated difference, and measured savings are labeled separately. Measured savings stay unmeasured until a premium run is executed.
 
 Phase 8 verifies a model reply before calling the task complete. After the selected model answers, the workspace runs the JavaScript or TypeScript project's own test, lint, typecheck, and build commands. The result is pass, fail, partial, or unknown. The first failure retries the same model with the check output in the prompt. A later failure asks routing for a stronger model only when the expected cost and success estimate justify it. If routing has no different model and another try still fits the budget, the same model may run again until the attempt limit. An unresolved task reports what failed, which attempts ran, the cost incurred, and why it stopped. The model reply is stored and is not written into the repository.

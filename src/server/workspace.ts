@@ -15,7 +15,8 @@ import { slugify } from "@/lib/slug";
 import { idSchema, paginationSchema, parseInput, type CreateProjectInput } from "@/lib/validation";
 import { highestTokenPrice, summarizeCosts, type CostKind, type CostLine, type CostSummary } from "@/lib/budget";
 import { listRegistryModels } from "@/lib/ai/registry";
-import { enabledModelCount, readEnabledProviderIds } from "@/server/ai";
+import { addMoney } from "@/lib/routing/money";
+import { countCompletedProjects } from "@/lib/dashboard/status";
 import { readWorkspace, type LoadState } from "@/server/load";
 
 export type ProjectSummary = {
@@ -32,9 +33,16 @@ export type ProjectSummary = {
 
 export type DashboardData = {
   projectCount: number;
-  taskCount: number;
-  enabledModelCount: number;
+  activeExecutions: number;
+  completedProjects: number;
   recordedSpendUsd: string;
+  budgetUsd: string | null;
+  savings: {
+    projectedUsd: string | null;
+    measuredUsd: null;
+    estimatedNote: string;
+    measuredNote: string;
+  };
   recentProjects: Array<{
     id: string;
     name: string;
@@ -134,12 +142,19 @@ export type ProjectDetail = {
     dependsOn: string[];
     routing: {
       outcome: string;
+      provider: string | null;
       modelName: string | null;
+      modelSlug: string | null;
       estimatedCostUsd: string | null;
     } | null;
     execution: {
       state: string;
+      provider: string | null;
       modelName: string | null;
+      modelSlug: string | null;
+      attemptCount: number;
+      durationMs: number;
+      escalated: boolean;
       actualCostUsd: string | null;
     } | null;
   }>;
@@ -154,6 +169,23 @@ export type ProjectDetail = {
     title: string;
     status: string;
     url: string | null;
+    externalNumber: number | null;
+  }>;
+  runs: Array<{
+    id: string;
+    status: string;
+    cancelRequested: boolean;
+    createdAt: string;
+    finishedAt: string | null;
+  }>;
+  logs: Array<{
+    id: string;
+    taskId: string;
+    taskTitle: string;
+    state: string;
+    attempt: number;
+    message: string;
+    createdAt: string;
   }>;
   spend: CostSummary;
 };
@@ -203,18 +235,40 @@ async function uniqueSlug(
 
 export async function getDashboard(): Promise<LoadState<DashboardData>> {
   return readWorkspace(async (prisma) => {
-    const [projectCount, taskCount, enabledProviders, spend, recentProjects, recentActivity] =
+    const [projectCount, activeExecutions, taskProjects, spend, budgets, records, recentProjects, recentActivity] =
       await Promise.all([
         prisma.project.count(),
-        prisma.task.count(),
-        readEnabledProviderIds(prisma),
+        prisma.executionRun.count({ where: { status: "RUNNING" } }),
+        prisma.project.findMany({
+          select: {
+            tasks: {
+              select: {
+                executions: {
+                  orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                  take: 1,
+                  select: { state: true },
+                },
+              },
+            },
+          },
+        }),
         prisma.costRecord.aggregate({
           where: { currency: "USD" },
           _sum: { amount: true },
         }),
+        prisma.budget.findMany({
+          where: { currency: "USD" },
+          orderBy: { createdAt: "desc" },
+          select: { projectId: true, limitAmount: true },
+        }),
+        prisma.costRecord.findMany({
+          where: { currency: "USD" },
+          orderBy: { createdAt: "desc" },
+          include: costRecordInclude,
+        }),
         prisma.project.findMany({
           orderBy: { updatedAt: "desc" },
-          take: 5,
+          take: 6,
           select: { id: true, name: true, status: true, updatedAt: true },
         }),
         prisma.auditLog.findMany({
@@ -227,11 +281,30 @@ export async function getDashboard(): Promise<LoadState<DashboardData>> {
         }),
       ]);
 
+    const seenBudgets = new Set<string>();
+    const budgetAmounts: string[] = [];
+    for (const budget of budgets) {
+      if (seenBudgets.has(budget.projectId)) continue;
+      seenBudgets.add(budget.projectId);
+      budgetAmounts.push(budget.limitAmount.toString());
+    }
+    const budgetUsd = budgetAmounts.length > 0 ? addMoney(budgetAmounts) : null;
+    const comparison = summarizeCosts(records.map(toCostLine), budgetUsd, premiumPricing()).comparison;
+
     return {
       projectCount,
-      taskCount,
-      enabledModelCount: enabledModelCount(enabledProviders),
+      activeExecutions,
+      completedProjects: countCompletedProjects(taskProjects.map((project) => ({
+        taskStates: project.tasks.map((task) => task.executions[0]?.state ?? null),
+      }))),
       recordedSpendUsd: decimalString(spend._sum.amount),
+      budgetUsd,
+      savings: {
+        projectedUsd: comparison.projectedSavingsUsd,
+        measuredUsd: null,
+        estimatedNote: comparison.baselineNote,
+        measuredNote: comparison.measuredNote,
+      },
       recentProjects: recentProjects.map((project) => ({
         id: project.id,
         name: project.name,
@@ -283,7 +356,8 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
   }
 
   return readWorkspace(async (prisma) => {
-    const project = await prisma.project.findUnique({
+    const [project, runs, logs] = await Promise.all([
+      prisma.project.findUnique({
       where: { id: parsed.data },
       include: {
         repositories: { orderBy: { name: "asc" }, take: 50 },
@@ -296,12 +370,12 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
             decisions: {
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 1,
-              include: { model: { select: { name: true } } },
+              include: { model: { select: { name: true, slug: true, provider: { select: { slug: true } } } } },
             },
             executions: {
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 1,
-              include: { model: { select: { name: true } } },
+              include: { model: { select: { name: true, slug: true, provider: { select: { slug: true } } } } },
             },
           },
         },
@@ -313,7 +387,19 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
           include: costRecordInclude,
         },
       },
-    });
+    }),
+      prisma.executionRun.findMany({
+        where: { projectId: parsed.data },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      }),
+      prisma.executionLog.findMany({
+        where: { execution: { task: { projectId: parsed.data } } },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: { execution: { select: { task: { select: { id: true, title: true } } } } },
+      }),
+    ]);
     if (!project) return null;
 
     return {
@@ -361,14 +447,21 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         routing: task.decisions[0]
           ? {
               outcome: task.decisions[0].outcome,
+              provider: task.decisions[0].provider ?? task.decisions[0].model?.provider.slug ?? null,
               modelName: task.decisions[0].model?.name ?? null,
+              modelSlug: task.decisions[0].modelSlug ?? task.decisions[0].model?.slug ?? null,
               estimatedCostUsd: task.decisions[0].estimatedCost?.toString() ?? null,
             }
           : null,
         execution: task.executions[0]
           ? {
               state: task.executions[0].state,
+              provider: task.executions[0].provider ?? task.executions[0].model?.provider.slug ?? null,
               modelName: task.executions[0].model?.name ?? null,
+              modelSlug: task.executions[0].modelSlug ?? task.executions[0].model?.slug ?? null,
+              attemptCount: task.executions[0].attemptCount,
+              durationMs: task.executions[0].durationMs,
+              escalated: task.executions[0].escalated,
               actualCostUsd: task.executions[0].actualCost?.toString() ?? null,
             }
           : null,
@@ -384,6 +477,23 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         title: pullRequest.title,
         status: pullRequest.status,
         url: pullRequest.url,
+        externalNumber: pullRequest.externalNumber,
+      })),
+      runs: runs.map((run) => ({
+        id: run.id,
+        status: run.status,
+        cancelRequested: run.cancelRequested,
+        createdAt: run.createdAt.toISOString(),
+        finishedAt: run.finishedAt?.toISOString() ?? null,
+      })),
+      logs: logs.map((entry) => ({
+        id: entry.id,
+        taskId: entry.execution.task.id,
+        taskTitle: entry.execution.task.title,
+        state: entry.state,
+        attempt: entry.attempt,
+        message: entry.message,
+        createdAt: entry.createdAt.toISOString(),
       })),
       spend: summarizeCosts(
         project.costRecords.map(toCostLine),
@@ -417,6 +527,35 @@ export async function listModelCatalog(): Promise<LoadState<ProviderCatalog[]>> 
         inputPricePerMillion: money(model.inputPricePerMillion),
         outputPricePerMillion: money(model.outputPricePerMillion),
       })),
+    }));
+  });
+}
+
+export type RecordedPullRequest = {
+  id: string;
+  title: string;
+  status: string;
+  url: string | null;
+  externalNumber: number | null;
+  projectId: string;
+  projectName: string;
+};
+
+export async function listRecordedPullRequests(): Promise<LoadState<RecordedPullRequest[]>> {
+  return readWorkspace(async (prisma) => {
+    const rows = await prisma.pullRequest.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      include: { project: { select: { id: true, name: true } } },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      url: row.url,
+      externalNumber: row.externalNumber,
+      projectId: row.project.id,
+      projectName: row.project.name,
     }));
   });
 }

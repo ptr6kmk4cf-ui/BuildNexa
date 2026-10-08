@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ConfirmSubmit } from "@/components/projects/confirm-submit";
 import { initialRunTasksState, visibleActionMessages } from "@/lib/execution-form";
 import { cancelProjectTasks, executeProjectTasks } from "@/server/actions/execute-project";
 
@@ -49,12 +50,17 @@ export function RunTasksForm({ projectId }: { projectId: string }) {
             {runPending ? "Running tasks..." : "Run tasks"}
           </Button>
         </form>
-        <form action={cancelAction} onSubmit={() => mark("cancel")}>
-          <input type="hidden" name="projectId" value={projectId} />
-          <Button type="submit" variant="ghost" disabled={cancelPending}>
-            {cancelPending ? "Stopping..." : "Cancel run"}
-          </Button>
-        </form>
+        <div onClick={() => mark("cancel")}>
+          <ConfirmSubmit
+            action={cancelAction}
+            title="Cancel this run?"
+            description="The running model call stops. Tasks that have not started stay in the plan until you run again. Stored replies are kept."
+            confirmLabel={cancelPending ? "Stopping..." : "Cancel run"}
+            triggerLabel={cancelPending ? "Stopping..." : "Cancel run"}
+            fields={{ projectId }}
+            disabled={cancelPending}
+          />
+        </div>
       </div>
     </div>
   );

@@ -46,7 +46,7 @@ async function ModelCatalog() {
       {providers.length === 0 ? (
         <EmptyState
           title="No providers are registered"
-          description="The model registry is empty. Add a model definition before a later phase can choose one."
+          description="The model registry is empty. Provider models are listed here when a provider is enabled."
         />
       ) : (
         providers.map((provider) => (

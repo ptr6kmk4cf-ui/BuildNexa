@@ -29,16 +29,18 @@ export function CostReport({
           {summary.alert}
         </p>
       ) : null}
-      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Figure label="Actual cost" value={formatUsd(summary.actualUsd)} note="Provider charges recorded for this project." />
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Figure label="Total project cost" value={formatUsd(summary.actualUsd)} note="Provider charges recorded for this project." />
+        <Figure label="Budget" value={summary.limitUsd ? formatUsd(summary.limitUsd) : "No budget"} note="The latest USD limit stored for this project." />
         <Figure
-          label="Remaining budget"
+          label="Remaining"
           value={summary.remainingUsd === null ? "No budget" : formatUsd(summary.remainingUsd)}
-          note={summary.limitUsd ? `Approved budget ${formatUsd(summary.limitUsd)}.` : "No USD budget is stored."}
+          note={summary.limitUsd ? "Budget minus the recorded cost." : "No USD budget is stored."}
         />
         <Figure label="Retry cost" value={formatUsd(summary.retryUsd)} note="Calls after the first try of the same model." />
         <Figure label="Escalation cost" value={formatUsd(summary.escalationUsd)} note="Calls sent to a different model." />
       </dl>
+      <h3 className="font-heading text-lg">Savings comparison</h3>
       <dl className="grid gap-3 sm:grid-cols-2">
         <Figure
           label="Actual cost"
@@ -58,9 +60,9 @@ export function CostReport({
         <Figure label="Measured savings" value="Not measured" note={summary.comparison.measuredNote} />
       </dl>
       <div className="grid gap-4 lg:grid-cols-3">
-        <Group title="Cost by task" rows={summary.byTask} empty="No task charges yet." />
-        <Group title="Cost by model" rows={summary.byModel} empty="No model charges yet." />
-        <Group title="Cost by provider" rows={summary.byProvider} empty="No provider charges yet." />
+        <Group title="Cost per task" rows={summary.byTask} empty="No task charges yet." />
+        <Group title="Cost per model" rows={summary.byModel} empty="No model charges yet." />
+        <Group title="Cost per provider" rows={summary.byProvider} empty="No provider charges yet." />
       </div>
     </div>
   );

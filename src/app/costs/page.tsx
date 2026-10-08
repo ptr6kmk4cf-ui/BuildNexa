@@ -37,7 +37,7 @@ async function CostPanel() {
           <section className="grid gap-3 sm:grid-cols-2">
             <Card size="sm">
               <CardHeader>
-                <CardDescription>Actual cost</CardDescription>
+                <CardDescription>Total AI spend</CardDescription>
                 <CardTitle className="font-heading text-3xl tabular-nums">{formatUsd(result.data.totalUsd)}</CardTitle>
               </CardHeader>
               <CardContent>

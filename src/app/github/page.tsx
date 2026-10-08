@@ -8,8 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { describePermissions } from "@/lib/github/permissions";
 import { githubErrorMessage, githubNotice } from "@/lib/github/messages";
+import { labelPullRequestStatus } from "@/lib/labels";
+import { Badge } from "@/components/ui/badge";
+import { ConfirmSubmit } from "@/components/projects/confirm-submit";
 import { disconnectGithub, refreshGithubRepositories } from "@/server/actions/github";
 import { loadGithubPage } from "@/server/github";
+import { listRecordedPullRequests, type RecordedPullRequest } from "@/server/workspace";
 import { idSchema } from "@/lib/validation";
 
 export const metadata = { title: "GitHub" };
@@ -42,7 +46,7 @@ async function GithubPanel({
       <PageHeader
         eyebrow="Source"
         title="GitHub"
-        description="Connect an account and choose a repository. Planning can use its name, branch, and description. This phase does not read the file tree, create branches, push commits, or open pull requests."
+        description="Connect an account, choose a repository, and see pull request status recorded for your projects."
         actions={
           page.account ? (
             <Link
@@ -75,6 +79,7 @@ async function GithubPanel({
           installationId={page.account.installationId}
           scopes={page.account.scopes}
           repositories={page.repositories}
+          pullRequests={await recordedPullRequests()}
         />
       ) : null}
     </>
@@ -167,6 +172,7 @@ function ConnectedGithub({
   installationId,
   scopes,
   repositories,
+  pullRequests,
 }: {
   login: string;
   accountType: string;
@@ -183,6 +189,7 @@ function ConnectedGithub({
     permissions: { admin: boolean; maintain: boolean; push: boolean; triage: boolean; pull: boolean };
     githubRepoId: string;
   }>;
+  pullRequests: RecordedPullRequest[] | null;
 }) {
   return (
     <div className="grid gap-4">
@@ -204,11 +211,13 @@ function ConnectedGithub({
                 Refresh repositories
               </Button>
             </form>
-            <form action={disconnectGithub}>
-              <Button type="submit" variant="destructive">
-                Disconnect GitHub
-              </Button>
-            </form>
+            <ConfirmSubmit
+              action={disconnectGithub}
+              title="Disconnect GitHub?"
+              description="This deletes the encrypted token and the cached repository list. Projects keep the name and branch already recorded."
+              confirmLabel="Disconnect GitHub"
+              triggerLabel="Disconnect GitHub"
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             Disconnect deletes the encrypted token and the cached repository list. Projects keep the
@@ -255,8 +264,42 @@ function ConnectedGithub({
           )}
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Pull requests</CardTitle>
+          <CardDescription>Status recorded on projects in this workspace.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {pullRequests === null ? (
+            <p role="alert" className="text-sm text-destructive">Pull request status could not be loaded.</p>
+          ) : pullRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pull requests are recorded.</p>
+          ) : (
+            <ul className="grid gap-3">
+              {pullRequests.map((pullRequest) => (
+                <li key={pullRequest.id} className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <Link href={`/projects/${pullRequest.projectId}#pull-requests`} className="text-sm font-medium hover:underline">
+                      {pullRequest.externalNumber ? `#${pullRequest.externalNumber} ` : ""}
+                      {pullRequest.title}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">{pullRequest.projectName}</p>
+                  </div>
+                  <Badge variant="outline">{labelPullRequestStatus(pullRequest.status)}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
+}
+
+async function recordedPullRequests(): Promise<RecordedPullRequest[] | null> {
+  const result = await listRecordedPullRequests();
+  if (result.status !== "ready") return null;
+  return result.data;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {

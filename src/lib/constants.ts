@@ -1,5 +1,5 @@
 export const APP_NAME = "AI Project Optimizer";
-export const APP_PHASE = 9 as const;
-export const APP_PHASE_LABEL = `Phase ${APP_PHASE}, budget`;
+export const APP_PHASE = 10 as const;
+export const APP_PHASE_LABEL = `Phase ${APP_PHASE}, dashboard`;
 export const LOCAL_OPERATOR_EMAIL = "local-operator@localhost.invalid";
 export const LOCAL_OPERATOR_NAME = "Local operator";

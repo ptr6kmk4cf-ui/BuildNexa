@@ -7,6 +7,7 @@ import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { isProviderId, providerLabel } from "@/lib/ai/types";
 import { labelExecutionState, labelOptimizationMode, labelRoutingOutcome, labelTaskDifficulty, labelTaskPriority, labelTaskType, labelVerificationOutcome } from "@/lib/labels";
 import { getPlannedTask, type PlannedTaskDetail } from "@/server/plan";
 
@@ -63,10 +64,34 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
         actions={<TaskStatusBadge status={task.status} />}
       />
       <p className="mb-6 text-sm">
-        <Link href={`/projects/${task.projectId}`} className="text-primary underline-offset-4 hover:underline">
+        <Link href={`/projects/${task.projectId}#tasks`} className="text-primary underline-offset-4 hover:underline">
           Back to the task graph
         </Link>
       </p>
+      <section aria-labelledby="task-facts" className="mb-6 rounded-xl border border-border bg-card px-5 py-4">
+        <h2 id="task-facts" className="font-heading text-xl">Task</h2>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Fact label="Task description" value={task.description ?? "No description was stored."} />
+          <Fact label="Task type" value={labelTaskType(task.type)} />
+          <Fact label="Selected model" value={task.execution?.modelName ?? task.decision?.modelName ?? "No model"} />
+          <Fact label="Provider" value={providerName(task.execution?.provider ?? task.decision?.provider ?? null)} />
+          <Fact label="Estimated cost" value={moneyLabel(task.decision?.estimatedCostUsd ?? task.execution?.estimatedCostUsd ?? null)} />
+          <Fact label="Actual cost" value={moneyLabel(task.execution?.actualCostUsd ?? null)} />
+          <Fact label="Attempts" value={task.execution ? String(task.execution.attemptCount) : "0"} />
+          <Fact label="Verification status" value={verificationLabel(task)} />
+          <Fact label="Execution duration" value={task.execution ? `${task.execution.durationMs} ms` : "Not run"} />
+        </dl>
+        <h3 className="mt-6 text-sm font-medium">Decision factors</h3>
+        {task.decision && task.decision.factors.length > 0 ? (
+          <ul className="mt-2 grid gap-2">
+            {task.decision.factors.map((factor) => (
+              <li key={factor.name} className="text-sm leading-6">{factor.detail}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">No decision factors are stored.</p>
+        )}
+      </section>
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader>
@@ -288,6 +313,32 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
       </div>
     </>
   );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs tracking-[0.14em] text-muted-foreground uppercase">{label}</dt>
+      <dd className="mt-1 text-sm leading-6">{value}</dd>
+    </div>
+  );
+}
+
+function providerName(provider: string | null): string {
+  if (!provider) return "No provider";
+  return isProviderId(provider) ? providerLabel(provider) : provider;
+}
+
+function moneyLabel(amount: string | null): string {
+  if (!amount) return "Not recorded";
+  return `$${amount}`;
+}
+
+function verificationLabel(task: PlannedTaskDetail): string {
+  const latest = task.verifications.at(-1);
+  if (!latest) return "Not run";
+  if (latest.outcome) return labelVerificationOutcome(latest.outcome);
+  return latest.status;
 }
 
 function successEstimateLabel(probability: number | null): string {
