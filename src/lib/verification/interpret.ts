@@ -13,6 +13,17 @@ export function unknownVerification(reason: string): TaskVerification {
   };
 }
 
+export function failedWithoutChecks(message: string): TaskVerification {
+  return {
+    outcome: "fail",
+    checks: [],
+    durationMs: 0,
+    errors: message,
+    summary: message,
+    costUsd: null,
+  };
+}
+
 export function interpretChecks(checks: readonly VerificationCheck[], costUsd: string | null = null): TaskVerification {
   if (checks.length === 0) return unknownVerification("No checks were produced.");
   const durationMs = checks.reduce((total, check) => total + Math.max(0, check.durationMs), 0);

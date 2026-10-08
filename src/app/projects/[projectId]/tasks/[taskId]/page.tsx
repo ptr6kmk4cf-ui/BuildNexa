@@ -243,7 +243,9 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
                           {labelVerificationOutcome(check.outcome)} · {check.command}
                           {check.exitCode === null ? "" : ` · exit ${check.exitCode}`} · {check.durationMs} ms
                         </p>
-                        {check.errors ? <p className="text-sm text-destructive whitespace-pre-wrap">{check.errors}</p> : null}
+                        {check.errors && !check.output.includes(check.errors) ? (
+                          <p className="text-sm text-destructive whitespace-pre-wrap">{check.errors}</p>
+                        ) : null}
                         {check.output ? <p className="text-xs leading-5 whitespace-pre-wrap text-muted-foreground">{check.output}</p> : null}
                       </div>
                     ))}

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERIFICATION_CONFIG } from "@/lib/verification/config";
@@ -6,7 +6,7 @@ import { commandLine, detectChecks, isAllowedVerificationCommand, type DetectedC
 import { checkFromProcess, interpretChecks, unknownVerification } from "@/lib/verification/interpret";
 import type { PlannedCheck, TaskVerification, VerificationCheck } from "@/lib/verification/types";
 
-export type CommandSpawn = (planned: PlannedCheck, cwd: string, timeoutMs: number) => Promise<{
+export type CommandSpawn = (planned: PlannedCheck, cwd: string, timeoutMs: number, signal?: AbortSignal) => Promise<{
   output: string;
   exitCode: number | null;
   durationMs: number;
@@ -24,14 +24,15 @@ export function readProjectChecks(cwd: string): DetectedChecks {
   }
 }
 
-export function createWorkspaceVerifier(cwd: string, spawnImpl: CommandSpawn = spawnCommand): () => Promise<TaskVerification> {
+export function createWorkspaceVerifier(cwd: string, spawnImpl: CommandSpawn = spawnCommand): (signal?: AbortSignal) => Promise<TaskVerification> {
   const cache = new Map<string, VerificationCheck>();
-  return async () => {
+  return async (signal) => {
     const detected = readProjectChecks(cwd);
     if (!detected.ok) return unknownVerification(detected.reason);
     const checks: VerificationCheck[] = [];
     let reused = false;
     for (const planned of detected.checks) {
+      if (signal?.aborted) break;
       if (!isAllowedVerificationCommand(planned.command, planned.args)) {
         checks.push(checkFromProcess(planned, {
           output: "",
@@ -48,7 +49,8 @@ export function createWorkspaceVerifier(cwd: string, spawnImpl: CommandSpawn = s
         checks.push({ ...saved });
         continue;
       }
-      const result = await spawnImpl(planned, cwd, VERIFICATION_CONFIG.commandTimeoutMs);
+      const result = await spawnImpl(planned, cwd, VERIFICATION_CONFIG.commandTimeoutMs, signal);
+      if (signal?.aborted || result.spawnError === "The check was cancelled.") break;
       const check = checkFromProcess(planned, result);
       cache.set(key, check);
       checks.push(check);
@@ -61,7 +63,12 @@ export function createWorkspaceVerifier(cwd: string, spawnImpl: CommandSpawn = s
   };
 }
 
-export function spawnCommand(planned: PlannedCheck, cwd: string, timeoutMs: number): Promise<{
+export function spawnCommand(
+  planned: PlannedCheck,
+  cwd: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{
   output: string;
   exitCode: number | null;
   durationMs: number;
@@ -75,24 +82,28 @@ export function spawnCommand(planned: PlannedCheck, cwd: string, timeoutMs: numb
       spawnError: "The command is not an allowed project check.",
     });
   }
+  if (signal?.aborted) {
+    return Promise.resolve({
+      output: "",
+      exitCode: null,
+      durationMs: 0,
+      spawnError: "The check was cancelled.",
+    });
+  }
   return new Promise((resolve) => {
     const started = Date.now();
     let output = "";
     let settled = false;
-    const finish = (result: { output: string; exitCode: number | null; durationMs: number; spawnError?: string }) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
     const child = spawn(planned.command, [...planned.args], {
       cwd,
       shell: false,
+      detached: true,
       env: verificationEnv(process.env),
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const stop = () => killProcessTree(child);
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
+      stop();
       finish({
         output,
         exitCode: null,
@@ -100,9 +111,29 @@ export function spawnCommand(planned: PlannedCheck, cwd: string, timeoutMs: numb
         spawnError: "The check exceeded its time limit.",
       });
     }, timeoutMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    function finish(result: { output: string; exitCode: number | null; durationMs: number; spawnError?: string }) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(result);
+    }
+    function onAbort() {
+      stop();
+      finish({
+        output,
+        exitCode: null,
+        durationMs: Date.now() - started,
+        spawnError: "The check was cancelled.",
+      });
+    }
     const append = (chunk: Buffer | string) => {
-      if (output.length >= VERIFICATION_CONFIG.maxOutputChars) return;
-      output += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      const room = VERIFICATION_CONFIG.maxOutputChars - output.length;
+      if (room <= 0) return;
+      output += text.slice(0, room);
     };
     child.stdout?.on("data", append);
     child.stderr?.on("data", append);
@@ -118,6 +149,20 @@ export function spawnCommand(planned: PlannedCheck, cwd: string, timeoutMs: numb
       finish({ output, exitCode: code, durationMs: Date.now() - started });
     });
   });
+}
+
+function killProcessTree(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined || pid <= 0) return;
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // The process already exited.
+    }
+  }
 }
 
 function verificationEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

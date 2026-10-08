@@ -89,10 +89,8 @@ function fitsBudget(spentUsd: string, nextUsd: string, budgetUsd: string | null)
 function worthEscalating(current: EscalationModel, nextCost: string, nextProbability: number): boolean {
   const currentProbability = current.successProbability ?? 0;
   const gain = nextProbability - currentProbability;
-  if (gain < VERIFICATION_CONFIG.minEscalationGain && current.estimatedCostUsd && compareMoney(nextCost, current.estimatedCostUsd) === 1) {
-    return false;
-  }
-  if (!current.estimatedCostUsd) return gain >= VERIFICATION_CONFIG.minEscalationGain;
+  if (gain < VERIFICATION_CONFIG.minEscalationGain) return false;
+  if (!current.estimatedCostUsd) return true;
   const ceiling = multiplyMoney(current.estimatedCostUsd, VERIFICATION_CONFIG.maxEscalationMultiple);
   if (!ceiling) return false;
   const comparison = compareMoney(nextCost, ceiling);

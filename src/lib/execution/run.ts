@@ -16,7 +16,7 @@ import type {
 } from "@/lib/execution/types";
 import { VERIFICATION_CONFIG } from "@/lib/verification/config";
 import { decideEscalation } from "@/lib/verification/decide";
-import { unresolvedReport } from "@/lib/verification/interpret";
+import { failedWithoutChecks, unresolvedReport } from "@/lib/verification/interpret";
 import { routeTask } from "@/lib/routing/route";
 import type { HistorySample } from "@/lib/routing/types";
 import type { EscalationModel, TaskVerification } from "@/lib/verification/types";
@@ -32,7 +32,7 @@ export type RunExecutionInput = {
   timeoutMs?: number;
   concurrency?: number;
   price?: (provider: ProviderId, modelId: string, usage: TokenCounts) => string | null;
-  verify?: () => Promise<TaskVerification>;
+  verify?: (signal: AbortSignal) => Promise<TaskVerification>;
   budgetUsd?: string | null;
   mode?: OptimizationMode;
   models?: readonly RegistryModel[];
@@ -286,26 +286,46 @@ async function executeVerified(
   };
   let sameModelAttempts = 0;
   let feedback = "";
+  const blocked = new Set<string>();
   for (let cycle = 0; cycle < maxCycles; cycle += 1) {
+    if (input.signal.aborted) {
+      finish(record, input.logs, "cancelled", record.attemptCount, "Cancelled while running.");
+      return;
+    }
     sameModelAttempts += 1;
     const switched = model.provider !== initialModel.provider || model.modelId !== initialModel.modelId;
     const reply = await attemptModel({
       ...input,
       record,
       model,
-      limit: input.maxAttempts,
+      limit: 1,
       escalated: switched,
       feedback,
       holdCompletion: true,
     });
     if (reply === "done") return;
-    if (reply === "failed") {
-      finish(record, input.logs, "failed", record.attemptCount, record.error ?? "The model did not return a result.");
+    if (input.signal.aborted) {
+      finish(record, input.logs, "cancelled", record.attemptCount, "Cancelled while running.");
       return;
     }
-    const verification = await input.verify();
-    const latest = record.attempts.at(-1);
-    verification.costUsd = latest?.actualCostUsd ?? null;
+
+    let verification: TaskVerification;
+    if (reply === "reply") {
+      const raw = await input.verify(input.signal);
+      if (input.signal.aborted) {
+        finish(record, input.logs, "cancelled", record.attemptCount, "Cancelled while running.");
+        return;
+      }
+      const latest = record.attempts.at(-1);
+      verification = {
+        ...raw,
+        checks: raw.checks.map((check) => ({ ...check })),
+        costUsd: latest?.actualCostUsd ?? null,
+      };
+    } else {
+      verification = failedWithoutChecks(record.error ?? "The model did not return a result.");
+      if (reply === "failed") sameModelAttempts = VERIFICATION_CONFIG.maxSameModelRetries + 1;
+    }
     record.verifications.push(verification);
     pushLog(input.logs, input.task.id, "running", record.attemptCount, `Verification ${verification.outcome}. ${verification.summary}`);
     if (verification.outcome === "pass") {
@@ -318,7 +338,8 @@ async function executeVerified(
       );
       return;
     }
-    const decision = decideForTask(input, record, verification, cycle + 1, sameModelAttempts, estimate, maxCycles);
+    if (sameModelAttempts > VERIFICATION_CONFIG.maxSameModelRetries) blocked.add(modelKey(model));
+    const decision = decideForTask(input, record, verification, cycle + 1, sameModelAttempts, estimate, maxCycles, blocked);
     if (decision.action === "stop" || cycle === maxCycles - 1) {
       const reason = decision.action === "stop" ? decision.reason : `the attempt limit of ${maxCycles} was reached.`;
       record.verificationStopReason = reason;
@@ -330,7 +351,9 @@ async function executeVerified(
       }));
       return;
     }
-    feedback = `${verification.summary}${verification.errors ? `\n${verification.errors}` : ""}`;
+    feedback = verification.errors && verification.errors !== verification.summary
+      ? `${verification.summary}\n${verification.errors}`
+      : verification.summary;
     if (decision.action === "retry") {
       pushLog(input.logs, input.task.id, "running", record.attemptCount, decision.reason);
       continue;
@@ -363,7 +386,7 @@ async function attemptModel(input: {
   price?: RunExecutionInput["price"];
   feedback?: string;
   holdCompletion?: boolean;
-}): Promise<"done" | "failed" | "reply"> {
+}): Promise<"done" | "failed" | "reply" | "retryable"> {
   for (let index = 0; index < input.limit; index += 1) {
     if (input.signal.aborted) {
       finish(input.record, input.logs, "cancelled", input.record.attemptCount, "Cancelled while running.");
@@ -446,8 +469,9 @@ async function attemptModel(input: {
       durationMs: result.durationMs,
       actualCostUsd: null,
     });
-    const canRetry = !input.escalated && index < input.limit - 1 && RETRYABLE.has(result.error);
-    if (!canRetry) return "failed";
+    const retryable = RETRYABLE.has(result.error);
+    const canRetry = !input.holdCompletion && !input.escalated && index < input.limit - 1 && retryable;
+    if (!canRetry) return input.holdCompletion && retryable ? "retryable" : "failed";
     pushLog(input.logs, input.task.id, "running", attempt, `${input.record.error} Retrying.`);
   }
   return "failed";
@@ -555,11 +579,13 @@ function decideForTask(
   sameModelAttempts: number,
   estimate: EscalationModel,
   maxAttempts: number,
+  blocked: ReadonlySet<string>,
 ) {
   const type = input.task.type;
   const difficulty = input.task.difficulty;
   const priority = input.task.priority;
-  const routed = type && difficulty && priority && input.mode && input.models && input.availableProviders
+  const models = input.models?.filter((candidate) => !blocked.has(modelKey(candidate)));
+  const routed = type && difficulty && priority && input.mode && models && models.length > 0 && input.availableProviders
     ? routeTask({
         task: {
           id: input.task.id,
@@ -570,7 +596,7 @@ function decideForTask(
           complexity: input.task.complexity ?? 1,
         },
         mode: input.mode,
-        models: input.models,
+        models,
         availableProviders: input.availableProviders,
         history: input.history ?? [],
       })
@@ -597,6 +623,10 @@ function decideForTask(
     current: estimate,
     routed,
   });
+}
+
+function modelKey(model: { provider: string; modelId: string }): string {
+  return `${model.provider}:${model.modelId}`;
 }
 
 function combineCost(current: string | null, next: string | null): string | null {

@@ -1,7 +1,7 @@
 export { VERIFICATION_CONFIG } from "@/lib/verification/config";
 export { decideEscalation } from "@/lib/verification/decide";
 export { commandLine, detectChecks, isAllowedVerificationCommand } from "@/lib/verification/detect";
-export { checkFromProcess, interpretChecks, unknownVerification, unresolvedReport } from "@/lib/verification/interpret";
+export { checkFromProcess, failedWithoutChecks, interpretChecks, unknownVerification, unresolvedReport } from "@/lib/verification/interpret";
 export { createWorkspaceVerifier, readProjectChecks, spawnCommand } from "@/lib/verification/runner";
 export type {
   CheckKind,

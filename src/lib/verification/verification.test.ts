@@ -232,6 +232,108 @@ describe("verified execution", () => {
     expect(report.tasks[0]?.verificationStopReason).toContain("attempt limit");
   });
 
+  it("leaves the failed model out of the next routing decision", async () => {
+    const calls: string[] = [];
+    let checks = 0;
+    const caller: ModelCaller = async (call) => {
+      calls.push(call.modelId);
+      return ok(`from ${call.modelId}`);
+    };
+    const report = await runExecution({
+      tasks: [task({
+        id: "a",
+        title: "Write the release note",
+        type: "documentation",
+        difficulty: "low",
+        priority: "low",
+        complexity: 1,
+        successProbability: 0.4,
+      })],
+      caller,
+      maxAttempts: 1,
+      mode: "savings",
+      availableProviders: new Set<ProviderId>(["openai", "gemini"]),
+      models: [cheap, strong],
+      verify: async () => {
+        checks += 1;
+        return checks < 3 ? failedTests() : passed();
+      },
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls).toEqual(["cheap-coder", "cheap-coder", "strong-reasoner"]);
+    expect(report.tasks[0]).toMatchObject({ state: "completed", escalated: true, modelId: "strong-reasoner" });
+  });
+
+  it("retries a provider timeout through the attempt limit", async () => {
+    let calls = 0;
+    const caller: ModelCaller = async () => {
+      calls += 1;
+      if (calls === 1) return { ok: false, error: "timeout" };
+      return ok("after the timeout");
+    };
+    const report = await runExecution({
+      tasks: [task({ id: "a", title: "A" })],
+      caller,
+      maxAttempts: 1,
+      verify: async () => passed(),
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls).toBe(2);
+    expect(report.tasks[0]?.state).toBe("completed");
+    expect(report.tasks[0]?.verifications.map((entry) => entry.outcome)).toEqual(["fail", "pass"]);
+  });
+
+  it("does not retry a model that has no API key", async () => {
+    const calls: string[] = [];
+    const caller: ModelCaller = async (call) => {
+      calls.push(call.modelId);
+      if (call.modelId === "cheap-coder") return { ok: false, error: "not_configured" };
+      return ok(`from ${call.modelId}`);
+    };
+    const report = await runExecution({
+      tasks: [task({
+        id: "a",
+        title: "Write the release note",
+        type: "documentation",
+        difficulty: "low",
+        priority: "low",
+        complexity: 1,
+        successProbability: 0.4,
+      })],
+      caller,
+      maxAttempts: 3,
+      mode: "savings",
+      availableProviders: new Set<ProviderId>(["openai", "gemini"]),
+      models: [cheap, strong],
+      verify: async () => passed(),
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(calls).toEqual(["cheap-coder", "strong-reasoner"]);
+    expect(report.tasks[0]).toMatchObject({ state: "completed", escalated: true });
+  });
+
+  it("cancels while project checks are running", async () => {
+    const controller = new AbortController();
+    const report = await runExecution({
+      tasks: [task({ id: "a", title: "A" })],
+      caller: async () => ok("claimed success"),
+      signal: controller.signal,
+      maxAttempts: 1,
+      verify: async (signal) => {
+        controller.abort();
+        if (signal.aborted) return failedTests();
+        return passed();
+      },
+    });
+    expect(report.ok).toBe(true);
+    if (!report.ok) return;
+    expect(report.tasks[0]?.state).toBe("cancelled");
+    expect(report.tasks[0]?.verifications).toEqual([]);
+  });
+
   it("stops an unknown verification without another model call", async () => {
     let calls = 0;
     const verification = unknownVerification("No package.json was found, so this is not a detected JavaScript or TypeScript project.");
@@ -268,6 +370,45 @@ describe("escalation decision", () => {
       routed: routedStrong(),
     });
     expect(decision.action).toBe("retry");
+  });
+
+  it("does not switch to a cheaper model with a lower success estimate", () => {
+    const decision = decideEscalation({
+      outcome: "fail",
+      attempt: 2,
+      maxAttempts: 3,
+      sameModelAttempts: 2,
+      maxSameModelRetries: 1,
+      spentUsd: "0.02",
+      budgetUsd: null,
+      current: { ...model, estimatedCostUsd: "0.05", successProbability: 0.8 },
+      routed: {
+        taskId: "a",
+        mode: "savings",
+        outcome: "selected",
+        selected: { provider: "gemini", modelId: "weaker", displayName: "Weaker" },
+        estimatedCostUsd: "0.001000",
+        successProbability: 0.2,
+        factors: [],
+        estimateNote: "",
+        candidates: [{
+          provider: "gemini",
+          modelId: "weaker",
+          displayName: "Weaker",
+          eligible: true,
+          rejection: null,
+          successProbability: 0.2,
+          estimatedCostUsd: "0.001000",
+          initialCostUsd: "0.001000",
+          retryCostUsd: "0.000000",
+          escalationCostUsd: "0.000000",
+          contextCostUsd: "0.000000",
+          verificationCostUsd: "0.000000",
+          factors: [],
+        }],
+      },
+    });
+    expect(decision.action).toBe("stop");
   });
 
   it("does not escalate when the stronger model is too expensive for the gain", () => {
