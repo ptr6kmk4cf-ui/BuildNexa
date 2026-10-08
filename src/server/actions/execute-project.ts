@@ -49,6 +49,8 @@ export async function cancelProjectTasks(
     }
     const cancelled = await requestExecutionCancel(projectId);
     if (!cancelled.ok) return { ...initialRunTasksState, message: cancelled.message };
+    refresh();
+    if (cancelled.stopped) return { saved: true, message: "The task run was cancelled." };
     return { saved: true, message: "Cancellation requested. A running model call will stop, and later tasks will not start." };
   } catch (error) {
     unstable_rethrow(error);

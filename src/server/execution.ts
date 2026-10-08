@@ -272,13 +272,12 @@ export async function executeStoredProject(
             data: { status: taskStatus(result.state) },
           });
         }
-        await tx.executionRun.update({
-          where: { id: run.id },
-          data: {
-            status: aborted ? "CANCELLED" : ran.some((task) => task.state === "failed") ? "FAILED" : "COMPLETED",
-            finishedAt: new Date(),
-          },
+        const nextStatus = aborted ? "CANCELLED" : ran.some((task) => task.state === "failed") ? "FAILED" : "COMPLETED";
+        const finished = await tx.executionRun.updateMany({
+          where: { id: run.id, status: "RUNNING" },
+          data: { status: nextStatus, finishedAt: new Date() },
         });
+        if (finished.count !== 1) throw new Error("run-taken-over");
         await tx.project.update({ where: { id: project.id }, data: { status: "ACTIVE" } });
         await tx.auditLog.create({
           data: {
@@ -319,7 +318,7 @@ export async function executeStoredProject(
 
 export async function requestExecutionCancel(
   projectId: string,
-): Promise<{ ok: true } | { ok: false; message: string }> {
+): Promise<{ ok: true; stopped: boolean } | { ok: false; message: string }> {
   await io();
   if (!idSchema.safeParse(projectId).success) return { ok: false, message: "That project could not be found." };
   const prisma = getPrisma();
@@ -328,11 +327,23 @@ export async function requestExecutionCancel(
     const run = await prisma.executionRun.findFirst({
       where: { projectId, status: "RUNNING" },
       orderBy: { createdAt: "desc" },
-      select: { id: true },
+      select: { id: true, heartbeatAt: true },
     });
     if (!run) return { ok: false, message: "No task run is in progress." };
-    await prisma.executionRun.update({ where: { id: run.id }, data: { cancelRequested: true } });
-    return { ok: true };
+    const now = Date.now();
+    if (now - run.heartbeatAt.getTime() >= EXECUTION_CONFIG.staleRunMs) {
+      const stopped = await prisma.executionRun.updateMany({
+        where: { id: run.id, status: "RUNNING", heartbeatAt: { lt: new Date(now - EXECUTION_CONFIG.staleRunMs) } },
+        data: { status: "CANCELLED", cancelRequested: true, finishedAt: new Date() },
+      });
+      if (stopped.count > 0) return { ok: true, stopped: true };
+    }
+    const flagged = await prisma.executionRun.updateMany({
+      where: { id: run.id, status: "RUNNING" },
+      data: { cancelRequested: true },
+    });
+    if (flagged.count === 0) return { ok: false, message: "No task run is in progress." };
+    return { ok: true, stopped: false };
   } catch (error) {
     logger.error("Could not cancel task execution", { error, projectId });
     return { ok: false, message: "The task run could not be cancelled." };
