@@ -101,6 +101,7 @@ export function CreateProjectDialog({
             <div className="grid gap-2">
               <Label htmlFor="project-repository">Repository</Label>
               <NativeSelect
+                key={defaultRepositoryId ?? "none"}
                 id="project-repository"
                 name="repositoryId"
                 defaultValue={defaultRepositoryId ?? ""}

@@ -205,6 +205,60 @@ describe("GitHub authorization", () => {
     expect(store.accounts).toHaveLength(0);
   });
 
+  it("keeps a saved account connected when the repository refresh throws", async () => {
+    const store = memoryStore();
+    const jar = memoryJar();
+    const url = new URL(beginAuthorization({ config, jar, now, secure: false }));
+    const failingStore: GithubStore = {
+      ...store,
+      async replaceRepositories() {
+        throw new Error("database unavailable");
+      },
+    };
+    const connected = await finishAuthorization({
+      query: { code: "authorization-code", state: url.searchParams.get("state") ?? "" },
+      config,
+      jar,
+      api: apiFor({ [tokenA]: [repository("alpha", "myapp")] }),
+      store: failingStore,
+      now,
+      secure: false,
+    });
+    expect(connected).toMatchObject({ ok: true, login: "alpha", repositoriesLoaded: false });
+    expect(store.accounts).toHaveLength(1);
+    expect(jar.values.has(SESSION_COOKIE)).toBe(true);
+    expect(jar.values.has(OAUTH_STATE_COOKIE)).toBe(false);
+  });
+
+  it("reports an unreachable profile without storing a token", async () => {
+    const store = memoryStore();
+    const jar = memoryJar();
+    const url = new URL(beginAuthorization({ config, jar, now, secure: false }));
+    const api: GithubApi = {
+      async exchangeAuthorizationCode() {
+        return { ok: true, accessToken: tokenA, scopes: "read:user repo" };
+      },
+      async getViewer() {
+        return { ok: false, reason: "unavailable" };
+      },
+      async listRepositories() {
+        return { ok: false, reason: "unavailable" };
+      },
+    };
+    const result = await finishAuthorization({
+      query: { code: "authorization-code", state: url.searchParams.get("state") ?? "" },
+      config,
+      jar,
+      api,
+      store,
+      now,
+      secure: false,
+    });
+    expect(result).toEqual({ ok: false, error: "unavailable" });
+    expect(store.accounts).toHaveLength(0);
+    expect(jar.values.has(SESSION_COOKIE)).toBe(false);
+  });
+
   it("stores an encrypted token, isolates repositories, and removes only that account on disconnect", async () => {
     const store = memoryStore();
     const jar = memoryJar();

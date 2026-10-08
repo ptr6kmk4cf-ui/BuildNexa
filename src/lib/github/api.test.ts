@@ -41,6 +41,24 @@ describe("GitHub API", () => {
         owner: { login: "mycompany" },
       }),
     ).toBeNull();
+    expect(
+      parseRepository({
+        id: 8,
+        name: "myapp",
+        private: false,
+        html_url: "https://user:secret@github.com/attacker/phish",
+        owner: { login: "mycompany" },
+      }),
+    ).toBeNull();
+    expect(
+      parseRepository({
+        id: 9,
+        name: "myapp",
+        private: false,
+        html_url: "https://user:secret@github.com/mycompany/myapp?next=/evil",
+        owner: { login: "mycompany" },
+      })?.htmlUrl,
+    ).toBe("https://github.com/mycompany/myapp");
   });
 
   it("ignores next links that leave api.github.com", () => {
@@ -88,6 +106,23 @@ describe("GitHub API", () => {
     expect(JSON.stringify(exchanged)).not.toContain(token);
     expect(JSON.stringify(listed)).not.toContain(token);
     expect(JSON.stringify(listed)).not.toContain("super-secret-client");
+  });
+
+  it("treats a rate-limited repository list as unreachable instead of a rejected token", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+        status: 403,
+        headers: { "x-ratelimit-remaining": "0" },
+      }),
+    );
+    const api = createGithubApi({
+      clientId: "Iv1.client",
+      clientSecret: "super-secret-client",
+      redirectUri: "http://127.0.0.1:43123/api/github/callback",
+      fetch: fetchImpl,
+    });
+    expect(await api.listRepositories(token)).toEqual({ ok: false, reason: "unavailable" });
+    expect(JSON.stringify(await api.listRepositories(token))).not.toContain(token);
   });
 
   it("lists repositories for the authorized user", async () => {

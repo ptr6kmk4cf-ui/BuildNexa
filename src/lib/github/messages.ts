@@ -9,7 +9,7 @@ export const GITHUB_ERROR_MESSAGES: Record<GithubFailure, string> = {
   exchange_failed: "GitHub could not finish authorization. No token was stored.",
   authorization_failed: "GitHub rejected the authorization. Connect the account again.",
   profile_failed: "GitHub did not return an account profile. No token was stored.",
-  unavailable: "GitHub could not be reached. Nothing was changed.",
+  unavailable: "GitHub could not be reached. The saved connection was left unchanged.",
   database: "Connect PostgreSQL before saving a GitHub account.",
   not_connected: "Connect GitHub before loading repositories.",
 };

@@ -85,11 +85,14 @@ export async function finishAuthorization(input: {
 
   const profile = await input.api.getViewer(exchanged.accessToken);
   if (!profile.ok) {
-    return { ok: false, error: profile.reason === "authorization_failed" ? "authorization_failed" : "profile_failed" };
+    if (profile.reason === "authorization_failed") return { ok: false, error: "authorization_failed" };
+    if (profile.reason === "unavailable") return { ok: false, error: "unavailable" };
+    return { ok: false, error: "profile_failed" };
   }
 
+  let userId: string;
   try {
-    const userId = await linkViewer(input.store, profile.viewer);
+    userId = await linkViewer(input.store, profile.viewer);
     const installationId = normalizeInstallationId(input.query.installationId);
     await input.store.saveAccount({
       userId,
@@ -101,17 +104,24 @@ export async function finishAuthorization(input: {
       scopes: exchanged.scopes,
       sealed: sealSecret(exchanged.accessToken, input.config.encryptionKey),
     });
-    writeSession(input.jar, input.config.appSecret, userId, input.now, input.secure);
+  } catch {
+    return { ok: false, error: "unavailable" };
+  }
+
+  writeSession(input.jar, input.config.appSecret, userId, input.now, input.secure);
+  let repositoriesLoaded = false;
+  try {
     const refreshed = await refreshRepositories({
       userId,
       config: input.config,
       api: input.api,
       store: input.store,
     });
-    return { ok: true, userId, login: profile.viewer.login, repositoriesLoaded: refreshed.ok };
+    repositoriesLoaded = refreshed.ok;
   } catch {
-    return { ok: false, error: "unavailable" };
+    repositoriesLoaded = false;
   }
+  return { ok: true, userId, login: profile.viewer.login, repositoriesLoaded };
 }
 
 export async function refreshRepositories(input: {

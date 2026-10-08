@@ -48,6 +48,17 @@ describe("GitHub OAuth routes", () => {
     expect(location).not.toContain("evil.example");
   });
 
+  it("does not redirect a bind-address host back to 0.0.0.0", async () => {
+    resetServerEnvCache();
+    const { GET } = await import("../connect/route");
+    const response = await GET(
+      new Request("http://0.0.0.0:43123/api/github/connect", { headers: { host: "0.0.0.0:43123" } }),
+    );
+    const location = response.headers.get("location") ?? "";
+    expect(location.startsWith("http://127.0.0.1:43123/github?error=not_configured")).toBe(true);
+    expect(location).not.toContain("0.0.0.0");
+  });
+
   it("does not start OAuth when GitHub is not configured", async () => {
     resetServerEnvCache();
     const { GET } = await import("../connect/route");

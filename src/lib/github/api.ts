@@ -165,8 +165,10 @@ async function githubRequest(
       }),
       9000,
     );
-    if (response.status === 401 || response.status === 403) {
-      return { ok: false, reason: "authorization_failed" };
+    if (response.status === 401) return { ok: false, reason: "authorization_failed" };
+    if (response.status === 403) {
+      const rateLimited = response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after");
+      return { ok: false, reason: rateLimited ? "unavailable" : "authorization_failed" };
     }
     if (!response.ok) return { ok: false, reason: "unavailable" };
     const body: unknown = await response.json();
@@ -180,17 +182,30 @@ export function parseRepository(entry: unknown): GithubRepository | null {
   const parsed = repositorySchema.safeParse(entry);
   if (!parsed.success || !isGithubWebUrl(parsed.data.html_url)) return null;
   const ownerLogin = parsed.data.owner.login;
+  const htmlUrl = canonicalGithubRepoUrl(parsed.data.html_url, ownerLogin, parsed.data.name);
+  if (!htmlUrl) return null;
   return {
     githubRepoId: String(parsed.data.id),
     ownerLogin,
     name: parsed.data.name,
     fullName: `${ownerLogin}/${parsed.data.name}`,
     defaultBranch: parsed.data.default_branch ?? "main",
-    htmlUrl: new URL(parsed.data.html_url).toString(),
+    htmlUrl,
     private: parsed.data.private,
     description: parsed.data.description?.trim() || null,
     permissions: readPermissions(parsed.data.permissions, true),
   };
+}
+
+function canonicalGithubRepoUrl(value: string, ownerLogin: string, name: string): string | null {
+  const url = new URL(value);
+  const path = url.pathname.replace(/\/+$/, "");
+  if (path !== `/${ownerLogin}/${name}`) return null;
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
 }
 
 export function nextGithubLink(header: string | null): string | null {

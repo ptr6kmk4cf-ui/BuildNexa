@@ -184,18 +184,33 @@ function githubApi(config: { clientId: string; clientSecret: string; callbackUrl
 
 export function appOrigin(request: Request): string {
   const setup = readGithubConfig(getServerEnv());
-  const allowed = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
-  if (setup.status === "ready") {
-    allowed.add(new URL(setup.config.callbackUrl).hostname);
+  const fallback = setup.status === "ready" ? new URL(setup.config.callbackUrl).origin : "http://127.0.0.1:43123";
+  const hostHeader = request.headers.get("host")?.trim().toLowerCase();
+  const hostname = hostHeader ? hostnameFromHost(hostHeader) : null;
+  const callback = setup.status === "ready" ? new URL(setup.config.callbackUrl) : null;
+  const callbackHost = callback?.hostname.toLowerCase() ?? null;
+  const localHost = hostname === "localhost" || hostname === "127.0.0.1";
+  if (!hostHeader || !hostname || (!localHost && hostname !== callbackHost)) return fallback;
+
+  const https =
+    request.headers.get("x-forwarded-proto") === "https" ||
+    (hostname === callbackHost && callback?.protocol === "https:");
+  try {
+    const origin = new URL(`${https ? "https" : "http"}://${hostHeader}`).origin;
+    if (new URL(origin).hostname !== hostname) return fallback;
+    return origin;
+  } catch {
+    return fallback;
   }
-  const hostHeader = request.headers.get("host");
-  const hostname = hostHeader?.split(":")[0]?.toLowerCase();
-  if (hostHeader && hostname && allowed.has(hostname)) {
-    const proto = request.headers.get("x-forwarded-proto") === "https" ? "https" : "http";
-    return `${proto}://${hostHeader}`;
+}
+
+function hostnameFromHost(host: string): string | null {
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    return end > 1 ? host.slice(1, end) : null;
   }
-  if (setup.status === "ready") return new URL(setup.config.callbackUrl).origin;
-  return "http://127.0.0.1:43123";
+  const name = host.split(":")[0];
+  return name || null;
 }
 
 function secureCookies(): boolean {

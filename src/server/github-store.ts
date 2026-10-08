@@ -107,10 +107,13 @@ export function createPrismaGithubStore(prisma: PrismaClient): GithubStore {
           });
         }
         await tx.connectedRepository.deleteMany({
-          where: {
-            userId,
-            githubRepoId: { notIn: githubRepoIds },
-          },
+          where:
+            githubRepoIds.length === 0
+              ? { userId }
+              : {
+                  userId,
+                  githubRepoId: { notIn: githubRepoIds },
+                },
         });
       });
       return this.listRepositories(userId);
