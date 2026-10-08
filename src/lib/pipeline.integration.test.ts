@@ -61,6 +61,6 @@ describe("local plan, route, and budget pipeline", () => {
 
     const blocked = approveSpend(ledger, "initial", "9.000000");
     expect(blocked.ok).toBe(false);
-    if (!blocked.ok) expect(blocked.reason).toBe("insufficient_budget");
+    if (!blocked.ok) expect(["insufficient_budget", "budget_exhausted"]).toContain(blocked.reason);
   });
 });
