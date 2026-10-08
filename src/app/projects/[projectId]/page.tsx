@@ -122,13 +122,28 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
         />
         <RecordCard
           title="Budget"
-          description="The limit recorded with the plan. A finished model call writes its actual cost on the Costs page."
+          description={
+            project.spend.limitUsd
+              ? `Actual cost ${formatUsd(project.spend.actualUsd)}. Remaining ${formatUsd(project.spend.remainingUsd ?? "0")}. Retries, debugging, escalation, and verification keep a reserve.`
+              : "The limit recorded with the plan. A finished model call writes its actual cost on the Costs page."
+          }
           empty="No budget is set."
           items={project.budgets.map((budget) => ({
             id: budget.id,
             title: formatUsd(budget.limitAmount),
             meta: `${budget.currency} · ${labelBudgetPeriod(budget.period)}`,
           }))}
+          extra={
+            <div className="grid gap-2 text-sm">
+              {project.spend.alert ? <p role="status">{project.spend.alert}</p> : null}
+              <p className="text-muted-foreground">
+                Retry {formatUsd(project.spend.retryUsd)} · Escalation {formatUsd(project.spend.escalationUsd)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Measured savings: not measured. {project.spend.comparison.measuredNote}
+              </p>
+            </div>
+          }
         />
         <RecordCard
           title="Pull requests"

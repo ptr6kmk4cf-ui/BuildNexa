@@ -1,5 +1,7 @@
 # AI Project Optimizer
 
+Phase 9 spends a project budget on the lowest expected cost per successful result, not the lowest token price. The approved amount reserves shares for retries, debugging, escalation, and verification. A call whose estimate does not fit the remaining share is not sent, unless the run was explicitly allowed to exceed the budget. Actual provider cost, the estimated premium-token baseline, the estimated difference, and measured savings are labeled separately. Measured savings stay unmeasured until a premium run is executed.
+
 Phase 8 verifies a model reply before calling the task complete. After the selected model answers, the workspace runs the JavaScript or TypeScript project's own test, lint, typecheck, and build commands. The result is pass, fail, partial, or unknown. The first failure retries the same model with the check output in the prompt. A later failure asks routing for a stronger model only when the expected cost and success estimate justify it. If routing has no different model and another try still fits the budget, the same model may run again until the attempt limit. An unresolved task reports what failed, which attempts ran, the cost incurred, and why it stopped. The model reply is stored and is not written into the repository.
 
 ## Architecture
@@ -16,6 +18,7 @@ src/lib/planner        task graph, dependency checks, and context-request hints
 src/lib/routing        expected-cost model choice, history blend, and decision factors
 src/lib/execution      dependency queue, retries, timeouts, cancellation, and the controlled model environment
 src/lib/verification   project checks, pass/fail interpretation, and escalation decisions
+src/lib/budget        budget reserves, cost per success, and savings labels
 src/lib/ai             provider interface, adapters, registry, and cost calculation
 src/lib                env, validation, errors, logging, encryption, GitHub API client
 prisma                 schema and migrations
@@ -41,6 +44,8 @@ The new-project screen collects the goal, a USD budget, and Savings, Balanced, o
 `runExecution` queues every task, starts work whose dependencies are complete, and keeps a small concurrency limit. A provider error is retried. A call that misses its deadline fails that attempt. Cancellation stops the running call and leaves later tasks unstarted. When verification is attached, a stored reply is not success until the checks pass. The first failed check retries the same model with that failure in the prompt. A later failure asks `routeTask` for a different model, leaving out models that already failed this task, and continues only when the success estimate improves enough and the expected cost stays within the budget and the cost ceiling. A timeout or connection error uses that same limit. A missing API key does not retry that model. With no different model, the same model can be tried again until `VERIFICATION_CONFIG.maxAttempts`. Cancellation stops a running check. The task page shows each check command, output, exit code, duration, and errors.
 
 `runExecution` without a verifier still completes when the model returns a reply. That path remains for provider-only retries. The project page passes a verifier, so a run there does not report success from the reply alone.
+
+`createBudgetLedger` holds an approved USD limit. The first call can use half of it. The rest stays reserved for retries (15%), debugging (10%), escalation (15%), and verification (10%). A call is sent only when its estimate fits the matching share. If it does not, that task is cancelled and later queued tasks stop. The run form checkbox is the explicit authorization to spend past those shares. Each priced call records the provider, model, task, input tokens, output tokens, cached tokens, tool calls, duration, and actual cost, marked initial, retry, debug, escalation, or verification. The Costs page shows actual cost, remaining budget, cost by task, model, and provider, retry cost, and escalation cost. Alerts appear at 50% of the budget, at 80%, and when the budget is used. A premium baseline replays this run's token counts at the highest configured registry price. That total and the difference are labeled estimated. Measured savings stay unmeasured, because a second premium-priced run is not executed for the comparison.
 
 `routeTask` scores each available model for one task. Expected cost is the first run, plus estimated retries, escalation, context, and verification. Savings keeps a quality floor and then prefers the lower expected cost. Balanced does the same and penalizes very slow models. Quality raises the floor and, on important tasks, can pay more for a higher success estimate. Success probabilities are estimates from the configured 0–5 ratings, blended with `TaskAttempt` history when attempts exist. They are not a measured accuracy. A provider that is disabled or has no API key is unavailable. A model below the capability floor, without required tool support, or with no price is not selected. The decision stores the task, candidates, selected model, estimated cost, success estimate, concise factors, and optimization mode. No chain-of-thought is stored.
 
@@ -127,7 +132,7 @@ npm start           # production server on port 43123
 
 ## Tests
 
-Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, model capabilities, simple and complex plans, invalid objectives, dependency links, cycle rejection, task validation, and routing for simple coding, complex coding, documentation, testing, debugging, savings versus quality, an unavailable provider, and insufficient capability.
+Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, model capabilities, simple and complex plans, invalid objectives, dependency links, cycle rejection, task validation, routing for simple coding, complex coding, documentation, testing, debugging, savings versus quality, an unavailable provider, and insufficient capability, plus budget enforcement, cost aggregation, retry cost, escalation cost, provider pricing, an insufficient budget, and cancellation when the budget is exhausted.
 
 ```bash
 npm test

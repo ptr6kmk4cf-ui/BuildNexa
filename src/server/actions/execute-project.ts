@@ -16,7 +16,9 @@ export async function executeProjectTasks(
     if (typeof projectId !== "string" || !idSchema.safeParse(projectId).success) {
       return { ...initialRunTasksState, message: "That project could not be found." };
     }
-    const executed = await executeStoredProject(projectId);
+    const executed = await executeStoredProject(projectId, {
+      authorizeOverBudget: formData.get("authorizeOverBudget") === "on",
+    });
     if (!executed.ok) return { ...initialRunTasksState, message: executed.message };
     refresh();
     if (executed.taskCount === 0) {

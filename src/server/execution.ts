@@ -27,6 +27,7 @@ const EXECUTION_STATE = {
 
 export async function executeStoredProject(
   projectId: string,
+  options?: { authorizeOverBudget?: boolean },
 ): Promise<{ ok: true; taskCount: number; completedCount: number } | { ok: false; message: string }> {
   await io();
   if (!idSchema.safeParse(projectId).success) return { ok: false, message: "That project could not be found." };
@@ -125,7 +126,12 @@ export async function executeStoredProject(
 
     const run = await prisma.executionRun
       .create({
-        data: { projectId: project.id, status: "RUNNING", heartbeatAt: new Date() },
+        data: {
+          projectId: project.id,
+          status: "RUNNING",
+          heartbeatAt: new Date(),
+          authorizeOverBudget: options?.authorizeOverBudget ?? false,
+        },
         select: { id: true },
       })
       .catch((error: unknown) => {
@@ -179,6 +185,7 @@ export async function executeStoredProject(
         },
         verify,
         budgetUsd,
+        authorizeOverBudget: options?.authorizeOverBudget ?? false,
         mode: MODE[project.optimizationMode],
         models: registry,
         availableProviders,
@@ -233,6 +240,8 @@ export async function executeStoredProject(
               errorMessage: result.error,
               inputTokens: result.inputTokens,
               outputTokens: result.outputTokens,
+              cachedInputTokens: result.cachedInputTokens,
+              toolCalls: result.toolCalls,
               durationMs: result.durationMs,
               estimatedCost: result.estimatedCostUsd,
               actualCost: result.actualCostUsd,
@@ -277,6 +286,8 @@ export async function executeStoredProject(
                   modelId: attemptModelId,
                   inputTokens: call.inputTokens,
                   outputTokens: call.outputTokens,
+                  cachedInputTokens: call.cachedInputTokens,
+                  toolCalls: call.toolCalls,
                 },
               });
             }
@@ -284,13 +295,40 @@ export async function executeStoredProject(
               await tx.costRecord.create({
                 data: {
                   projectId: project.id,
+                  taskId: task.id,
                   taskAttemptId: attempt.id,
                   modelId: attemptModelId,
+                  kind: storedCostKind(call.kind),
                   amount: call.actualCostUsd,
                   currency: "USD",
+                  inputTokens: call.inputTokens,
+                  outputTokens: call.outputTokens,
+                  cachedInputTokens: call.cachedInputTokens,
+                  toolCalls: call.toolCalls,
+                  durationMs: call.durationMs,
                 },
               });
             }
+          }
+          for (const line of result.verifications.length > 0 ? report.costs.filter((cost) => cost.taskId === task.id && cost.kind === "verification") : []) {
+            const lineModelId = result.provider && result.modelId
+              ? await rememberModel(result.provider, result.modelId, result.displayName ?? result.modelId)
+              : null;
+            await tx.costRecord.create({
+              data: {
+                projectId: project.id,
+                taskId: task.id,
+                modelId: lineModelId,
+                kind: "VERIFICATION",
+                amount: line.amount,
+                currency: "USD",
+                inputTokens: line.inputTokens,
+                outputTokens: line.outputTokens,
+                cachedInputTokens: line.cachedInputTokens,
+                toolCalls: line.toolCalls,
+                durationMs: line.durationMs,
+              },
+            });
           }
           const recordedAt = Date.now();
           for (const [index, verification] of result.verifications.entries()) {
@@ -515,6 +553,14 @@ function providerKey(provider: ProviderId): "OPENAI_API_KEY" | "ANTHROPIC_API_KE
   if (provider === "openai") return "OPENAI_API_KEY";
   if (provider === "anthropic") return "ANTHROPIC_API_KEY";
   return "GEMINI_API_KEY";
+}
+
+function storedCostKind(kind: string): "INITIAL" | "RETRY" | "DEBUG" | "ESCALATION" | "VERIFICATION" {
+  if (kind === "retry") return "RETRY";
+  if (kind === "debug") return "DEBUG";
+  if (kind === "escalation") return "ESCALATION";
+  if (kind === "verification") return "VERIFICATION";
+  return "INITIAL";
 }
 
 function legacyVerificationStatus(outcome: string): "PASSED" | "FAILED" | "SKIPPED" {

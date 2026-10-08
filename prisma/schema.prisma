@@ -1,6 +1,6 @@
 // AI Project Optimizer data model.
-// Phase 8 verifies a finished model reply with the project's own checks.
-// A passing reply is not stored as success unless those checks pass.
+// Phase 9 records provider spend against a reserved project budget.
+// A model reply is still not success unless the project checks pass.
 // API keys are not stored. GitHub access tokens remain ciphertext only.
 // Verification runs only allowlisted project checks. It does not apply the reply to the files.
 
@@ -80,6 +80,14 @@ enum BudgetPeriod {
   WEEKLY
   MONTHLY
   PROJECT
+}
+
+enum CostKind {
+  INITIAL
+  RETRY
+  DEBUG
+  ESCALATION
+  VERIFICATION
 }
 
 enum AuditAction {
@@ -279,6 +287,7 @@ model Task {
   verifications Verification[]
   verificationChecks VerificationCheck[]
   executions    TaskExecution[]
+  costRecords   CostRecord[]
 
   @@unique([planId, planKey])
   @@index([projectId, status])
@@ -326,8 +335,9 @@ model ExecutionRun {
   id              String             @id @default(cuid())
   projectId       String
   status          ExecutionRunStatus @default(RUNNING)
-  cancelRequested Boolean            @default(false)
-  heartbeatAt     DateTime           @default(now())
+  cancelRequested     Boolean            @default(false)
+  authorizeOverBudget Boolean        @default(false)
+  heartbeatAt         DateTime       @default(now())
   createdAt       DateTime           @default(now())
   finishedAt      DateTime?
 
@@ -349,9 +359,11 @@ model TaskExecution {
   modelId          String?
   result           String?        @db.Text
   errorMessage     String?        @db.Text
-  inputTokens      Int            @default(0)
-  outputTokens     Int            @default(0)
-  durationMs       Int            @default(0)
+  inputTokens        Int            @default(0)
+  outputTokens       Int            @default(0)
+  cachedInputTokens  Int            @default(0)
+  toolCalls          Int            @default(0)
+  durationMs         Int            @default(0)
   estimatedCost    Decimal?       @db.Decimal(14, 6)
   actualCost       Decimal?       @db.Decimal(14, 6)
   escalated        Boolean        @default(false)
@@ -457,9 +469,11 @@ model TokenUsage {
   id            String   @id @default(cuid())
   taskAttemptId String
   modelId       String
-  inputTokens   Int      @default(0)
-  outputTokens  Int      @default(0)
-  createdAt     DateTime @default(now())
+  inputTokens        Int      @default(0)
+  outputTokens       Int      @default(0)
+  cachedInputTokens  Int      @default(0)
+  toolCalls          Int      @default(0)
+  createdAt          DateTime @default(now())
 
   attempt TaskAttempt @relation(fields: [taskAttemptId], references: [id], onDelete: Cascade)
   model   Model       @relation(fields: [modelId], references: [id], onDelete: Restrict)
@@ -469,20 +483,30 @@ model TokenUsage {
 }
 
 model CostRecord {
-  id            String   @id @default(cuid())
-  projectId     String
-  taskAttemptId String?
-  modelId       String?
-  amount        Decimal  @db.Decimal(14, 6)
-  currency      String   @default("USD")
-  createdAt     DateTime @default(now())
+  id                 String    @id @default(cuid())
+  projectId          String
+  taskId             String?
+  taskAttemptId      String?
+  modelId            String?
+  kind               CostKind  @default(INITIAL)
+  amount             Decimal   @db.Decimal(14, 6)
+  currency           String    @default("USD")
+  inputTokens        Int       @default(0)
+  outputTokens       Int       @default(0)
+  cachedInputTokens  Int       @default(0)
+  toolCalls          Int       @default(0)
+  durationMs         Int       @default(0)
+  createdAt          DateTime  @default(now())
 
   project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
   attempt TaskAttempt? @relation(fields: [taskAttemptId], references: [id], onDelete: SetNull)
   model   Model?       @relation(fields: [modelId], references: [id], onDelete: SetNull)
 
   @@index([projectId, createdAt])
+  @@index([taskId])
   @@index([modelId])
+  @@index([kind])
   @@index([currency])
 }
 

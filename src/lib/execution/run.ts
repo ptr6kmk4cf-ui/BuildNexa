@@ -1,5 +1,7 @@
 import type { ProviderId, RegistryModel, TokenCounts } from "@/lib/ai/types";
 import { findCycle, type OptimizationMode } from "@/lib/planner";
+import { approveSpend, commitSpend, createBudgetLedger, type BudgetLedger } from "@/lib/budget/ledger";
+import type { CostKind } from "@/lib/budget/types";
 import { addMoney } from "@/lib/routing/money";
 import { EXECUTION_CONFIG } from "@/lib/execution/config";
 import { createControlledEnvironment, type ExecutionEnvironment, type ModelCaller } from "@/lib/execution/environment";
@@ -34,6 +36,7 @@ export type RunExecutionInput = {
   price?: (provider: ProviderId, modelId: string, usage: TokenCounts) => string | null;
   verify?: (signal: AbortSignal) => Promise<TaskVerification>;
   budgetUsd?: string | null;
+  authorizeOverBudget?: boolean;
   mode?: OptimizationMode;
   models?: readonly RegistryModel[];
   availableProviders?: ReadonlySet<ProviderId>;
@@ -55,6 +58,7 @@ export async function runExecution(input: RunExecutionInput): Promise<ExecutionR
   const records = new Map<string, MutableResult>();
   const logs: ExecutionLogEntry[] = [];
   const costs: ExecutionCost[] = [];
+  const ledger = input.budgetUsd ? createBudgetLedger(input.budgetUsd, input.authorizeOverBudget ?? false) : null;
 
   for (const task of input.tasks) {
     const record = blankResult(task);
@@ -69,6 +73,20 @@ export async function runExecution(input: RunExecutionInput): Promise<ExecutionR
     }
   }
 
+  if (input.budgetUsd && !ledger) {
+    for (const record of records.values()) {
+      if (record.state !== "queued") continue;
+      finish(record, logs, "cancelled", 0, "The project budget could not be read, so no model was called.");
+    }
+    return {
+      ok: true,
+      tasks: input.tasks.map((task) => publicResult(records.get(task.id) ?? blankResult(task))),
+      logs,
+      costs,
+      hostCommands: [],
+    };
+  }
+
   const inflight = new Map<string, Promise<void>>();
   const children = new Map<string, AbortController>();
   const onAbort = () => {
@@ -80,7 +98,13 @@ export async function runExecution(input: RunExecutionInput): Promise<ExecutionR
   try {
     while (true) {
       cancelUnstartable(input.tasks, records, logs, signal);
-      if (inflight.size < concurrency && !signal.aborted) {
+      if (ledger?.blocked) {
+        for (const record of records.values()) {
+          if (record.state !== "queued") continue;
+          finish(record, logs, "cancelled", record.attemptCount, "Cancelled because the project budget was exhausted.");
+        }
+      }
+      if (inflight.size < concurrency && !signal.aborted && !ledger?.blocked) {
         for (const task of readyTasks(input.tasks, records)) {
           if (inflight.size >= concurrency) break;
           const child = new AbortController();
@@ -99,6 +123,7 @@ export async function runExecution(input: RunExecutionInput): Promise<ExecutionR
             price: input.price,
             verify: input.verify,
             budgetUsd: input.budgetUsd,
+            ledger,
             mode: input.mode,
             models: input.models,
             availableProviders: input.availableProviders,
@@ -200,6 +225,7 @@ async function executeTask(input: {
   price?: RunExecutionInput["price"];
   verify?: RunExecutionInput["verify"];
   budgetUsd?: string | null;
+  ledger: BudgetLedger | null;
   mode?: OptimizationMode;
   models?: readonly RegistryModel[];
   availableProviders?: ReadonlySet<ProviderId>;
@@ -265,6 +291,7 @@ async function executeVerified(
     price?: RunExecutionInput["price"];
     verify?: RunExecutionInput["verify"];
     budgetUsd?: string | null;
+    ledger: BudgetLedger | null;
     mode?: OptimizationMode;
     models?: readonly RegistryModel[];
     availableProviders?: ReadonlySet<ProviderId>;
@@ -302,6 +329,7 @@ async function executeVerified(
       escalated: switched,
       feedback,
       holdCompletion: true,
+      costKind: switched ? "escalation" : sameModelAttempts > 1 ? "retry" : input.task.type === "debugging" ? "debug" : "initial",
     });
     if (reply === "done") return;
     if (input.signal.aborted) {
@@ -327,6 +355,21 @@ async function executeVerified(
       if (reply === "failed") sameModelAttempts = VERIFICATION_CONFIG.maxSameModelRetries + 1;
     }
     record.verifications.push(verification);
+    if (verification.checks.length > 0) {
+      input.costs.push({
+        taskId: input.task.id,
+        amount: "0",
+        currency: "USD",
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        toolCalls: 0,
+        durationMs: verification.durationMs,
+        provider: model.provider,
+        modelId: model.modelId,
+        kind: "verification",
+      });
+    }
     pushLog(input.logs, input.task.id, "running", record.attemptCount, `Verification ${verification.outcome}. ${verification.summary}`);
     if (verification.outcome === "pass") {
       finish(
@@ -386,10 +429,23 @@ async function attemptModel(input: {
   price?: RunExecutionInput["price"];
   feedback?: string;
   holdCompletion?: boolean;
+  ledger?: BudgetLedger | null;
+  costKind?: CostKind;
 }): Promise<"done" | "failed" | "reply" | "retryable"> {
   for (let index = 0; index < input.limit; index += 1) {
     if (input.signal.aborted) {
       finish(input.record, input.logs, "cancelled", input.record.attemptCount, "Cancelled while running.");
+      return "done";
+    }
+    if (input.ledger?.blocked) {
+      finish(input.record, input.logs, "cancelled", input.record.attemptCount, "Cancelled because the project budget was exhausted.");
+      return "done";
+    }
+    const kind = input.costKind ?? (input.escalated ? "escalation" : index > 0 ? "retry" : input.task.type === "debugging" ? "debug" : "initial");
+    const reserved = input.ledger ? holdBudget(input.ledger, kind, input.task.estimatedCostUsd) : { ok: true as const, amount: null };
+    if (!reserved.ok) {
+      if (input.ledger) input.ledger.blocked = true;
+      finish(input.record, input.logs, "cancelled", input.record.attemptCount, reserved.message);
       return "done";
     }
     input.record.attemptCount += 1;
@@ -418,15 +474,20 @@ async function attemptModel(input: {
       input.record.ignoredCommand = looksLikeHostCommand(result.text);
       input.record.inputTokens += result.usage.inputTokens;
       input.record.outputTokens += result.usage.outputTokens;
+      input.record.cachedInputTokens += result.usage.cachedInputTokens;
       const actual = quote(input.price, input.model.provider, input.model.modelId, result.usage);
+      if (input.ledger && reserved.amount) commitSpend(input.ledger, kind, reserved.amount, actual);
       input.record.actualCostUsd = combineCost(input.record.actualCostUsd, actual);
       recordAttempt(input.record, input.model, {
         status: "succeeded",
         error: null,
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
+        cachedInputTokens: result.usage.cachedInputTokens,
+        toolCalls: 0,
         durationMs: result.durationMs,
         actualCostUsd: actual,
+        kind,
       });
       if (actual) {
         input.costs.push({
@@ -435,8 +496,12 @@ async function attemptModel(input: {
           currency: "USD",
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
+          cachedInputTokens: result.usage.cachedInputTokens,
+          toolCalls: 0,
+          durationMs: result.durationMs,
           provider: input.model.provider,
           modelId: input.model.modelId,
+          kind,
         });
       }
       if (input.holdCompletion) return "reply";
@@ -447,14 +512,18 @@ async function attemptModel(input: {
       return "done";
     }
 
+    if (input.ledger && reserved.amount) commitSpend(input.ledger, kind, reserved.amount, "0");
     if (result.error === "cancelled" || input.signal.aborted) {
       recordAttempt(input.record, input.model, {
         status: "cancelled",
         error: "Cancelled while running.",
         inputTokens: 0,
         outputTokens: 0,
+        cachedInputTokens: 0,
+        toolCalls: 0,
         durationMs: result.durationMs,
         actualCostUsd: null,
+        kind,
       });
       finish(input.record, input.logs, "cancelled", attempt, "Cancelled while running.");
       return "done";
@@ -466,8 +535,11 @@ async function attemptModel(input: {
       error: input.record.error,
       inputTokens: 0,
       outputTokens: 0,
+      cachedInputTokens: 0,
+      toolCalls: 0,
       durationMs: result.durationMs,
       actualCostUsd: null,
+      kind,
     });
     const retryable = RETRYABLE.has(result.error);
     const canRetry = !input.holdCompletion && !input.escalated && index < input.limit - 1 && retryable;
@@ -509,6 +581,8 @@ function publicResult(record: MutableResult): TaskExecutionResult {
     error: record.error,
     inputTokens: record.inputTokens,
     outputTokens: record.outputTokens,
+    cachedInputTokens: record.cachedInputTokens,
+    toolCalls: record.toolCalls,
     durationMs: record.durationMs,
     estimatedCostUsd: record.estimatedCostUsd,
     actualCostUsd: record.actualCostUsd,
@@ -534,6 +608,8 @@ function blankResult(task: ExecutionTask): MutableResult {
     error: null,
     inputTokens: 0,
     outputTokens: 0,
+    cachedInputTokens: 0,
+    toolCalls: 0,
     durationMs: 0,
     estimatedCostUsd: task.estimatedCostUsd,
     actualCostUsd: null,
@@ -559,8 +635,11 @@ function recordAttempt(
     error: attempt.error,
     inputTokens: attempt.inputTokens,
     outputTokens: attempt.outputTokens,
+    cachedInputTokens: attempt.cachedInputTokens,
+    toolCalls: attempt.toolCalls,
     durationMs: attempt.durationMs,
     actualCostUsd: attempt.actualCostUsd,
+    kind: attempt.kind,
   });
 }
 
@@ -627,6 +706,17 @@ function decideForTask(
 
 function modelKey(model: { provider: string; modelId: string }): string {
   return `${model.provider}:${model.modelId}`;
+}
+
+function holdBudget(
+  ledger: BudgetLedger,
+  kind: CostKind,
+  estimateUsd: string | null,
+): { ok: true; amount: string } | { ok: false; message: string } {
+  if (!estimateUsd) return { ok: false, message: "This call has no price estimate, so it was not sent." };
+  const decision = approveSpend(ledger, kind, estimateUsd);
+  if (!decision.ok) return { ok: false, message: decision.message };
+  return { ok: true, amount: estimateUsd };
 }
 
 function combineCost(current: string | null, next: string | null): string | null {

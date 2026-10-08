@@ -39,8 +39,12 @@ export function RunTasksForm({ projectId }: { projectId: string }) {
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
-        <form action={runAction} onSubmit={() => mark("run")}>
+        <form action={runAction} onSubmit={() => mark("run")} className="grid gap-2">
           <input type="hidden" name="projectId" value={projectId} />
+          <label className="flex items-start gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" name="authorizeOverBudget" className="mt-0.5" />
+            Allow this run to exceed the project budget
+          </label>
           <Button type="submit" variant="outline" disabled={runPending}>
             {runPending ? "Running tasks..." : "Run tasks"}
           </Button>

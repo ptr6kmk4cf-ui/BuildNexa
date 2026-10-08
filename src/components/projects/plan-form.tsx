@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
+import { BUDGET_PRESETS_USD } from "@/lib/budget";
 import { planProject } from "@/server/actions/plan-project";
 import { initialPlanProjectFormState } from "@/lib/project-form";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ export function PlanForm({
   defaultRepositoryId?: string;
 }) {
   const [state, formAction, pending] = useActionState(planProject, initialPlanProjectFormState);
+  const [budget, setBudget] = useState(state.values.budget);
   const repositoryDefault = repositories.some((repository) => repository.id === defaultRepositoryId)
     ? defaultRepositoryId
     : "";
@@ -72,12 +74,20 @@ export function PlanForm({
             inputMode="decimal"
             required
             placeholder="25.00"
-            defaultValue={state.values.budget}
+            value={budget}
+            onChange={(event) => setBudget(event.target.value)}
             aria-invalid={Boolean(state.fieldErrors.budget)}
             aria-describedby={state.fieldErrors.budget ? "plan-budget-error plan-budget-hint" : "plan-budget-hint"}
           />
+          <div className="flex flex-wrap gap-2">
+            {BUDGET_PRESETS_USD.map((preset) => (
+              <Button key={preset} type="button" variant="outline" size="sm" onClick={() => setBudget(preset)}>
+                ${preset}
+              </Button>
+            ))}
+          </div>
           <p id="plan-budget-hint" className="text-xs text-muted-foreground">
-            Stored as the project limit. This step does not spend it.
+            Stored as the project limit. Part of it is reserved for retries, debugging, escalation, and verification. This step does not spend it.
           </p>
           {state.fieldErrors.budget ? (
             <p id="plan-budget-error" role="alert" className="text-xs text-destructive">

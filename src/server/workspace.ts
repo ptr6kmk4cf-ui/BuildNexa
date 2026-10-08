@@ -13,6 +13,8 @@ import { readContextRequests } from "@/lib/planner";
 import type { ContextRequest } from "@/lib/planner";
 import { slugify } from "@/lib/slug";
 import { idSchema, paginationSchema, parseInput, type CreateProjectInput } from "@/lib/validation";
+import { highestTokenPrice, summarizeCosts, type CostKind, type CostLine, type CostSummary } from "@/lib/budget";
+import { listRegistryModels } from "@/lib/ai/registry";
 import { enabledModelCount, readEnabledProviderIds } from "@/server/ai";
 import { readWorkspace, type LoadState } from "@/server/load";
 
@@ -85,7 +87,9 @@ export type CostOverview = {
     amount: string;
     currency: string;
     createdAt: string;
+    kind: string;
   }>;
+  projects: Array<CostSummary & { projectId: string; projectName: string }>;
 };
 
 export type ProjectDetail = {
@@ -151,6 +155,7 @@ export type ProjectDetail = {
     status: string;
     url: string | null;
   }>;
+  spend: CostSummary;
 };
 
 export type SettingsSnapshot = {
@@ -302,6 +307,11 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         },
         budgets: { orderBy: { createdAt: "desc" }, take: 20 },
         pullRequests: { orderBy: { updatedAt: "desc" }, take: 20 },
+        costRecords: {
+          orderBy: { createdAt: "desc" },
+          take: 500,
+          include: costRecordInclude,
+        },
       },
     });
     if (!project) return null;
@@ -375,6 +385,11 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         status: pullRequest.status,
         url: pullRequest.url,
       })),
+      spend: summarizeCosts(
+        project.costRecords.map(toCostLine),
+        project.budgets[0]?.currency === "USD" ? project.budgets[0].limitAmount.toString() : null,
+        premiumPricing(),
+      ),
     };
   });
 }
@@ -408,7 +423,7 @@ export async function listModelCatalog(): Promise<LoadState<ProviderCatalog[]>> 
 
 export async function getCosts(): Promise<LoadState<CostOverview>> {
   return readWorkspace(async (prisma) => {
-    const [spend, recordCount, budgets, recent] = await Promise.all([
+    const [spend, recordCount, budgets, recent, records] = await Promise.all([
       prisma.costRecord.aggregate({
         where: { currency: "USD" },
         _sum: { amount: true },
@@ -424,7 +439,30 @@ export async function getCosts(): Promise<LoadState<CostOverview>> {
         take: 20,
         include: { project: { select: { name: true } } },
       }),
+      prisma.costRecord.findMany({
+        where: { currency: "USD" },
+        orderBy: { createdAt: "desc" },
+        take: 1000,
+        include: costRecordInclude,
+      }),
     ]);
+    const premium = premiumPricing();
+    const linesByProject = new Map<string, CostLine[]>();
+    for (const record of records) {
+      const lines = linesByProject.get(record.projectId) ?? [];
+      lines.push(toCostLine(record));
+      linesByProject.set(record.projectId, lines);
+    }
+    const seen = new Set<string>();
+    const projects = budgets.flatMap((budget) => {
+      if (budget.currency !== "USD" || seen.has(budget.projectId)) return [];
+      seen.add(budget.projectId);
+      return [{
+        projectId: budget.project.id,
+        projectName: budget.project.name,
+        ...summarizeCosts(linesByProject.get(budget.projectId) ?? [], budget.limitAmount.toString(), premium),
+      }];
+    });
 
     return {
       totalUsd: decimalString(spend._sum.amount),
@@ -442,10 +480,55 @@ export async function getCosts(): Promise<LoadState<CostOverview>> {
         projectName: record.project.name,
         amount: record.amount.toString(),
         currency: record.currency,
+        kind: record.kind,
         createdAt: record.createdAt.toISOString(),
       })),
+      projects,
     };
   });
+}
+
+const costRecordInclude = {
+  task: { select: { title: true } },
+  model: { select: { name: true, slug: true, provider: { select: { slug: true } } } },
+} as const;
+
+function premiumPricing() {
+  return highestTokenPrice(listRegistryModels(getServerEnv().MODEL_PRICING).models);
+}
+
+function toCostLine(record: {
+  id: string;
+  taskId: string | null;
+  kind: string;
+  amount: { toString(): string };
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  toolCalls: number;
+  durationMs: number;
+  task: { title: string } | null;
+  model: { name: string; slug: string; provider: { slug: string } } | null;
+}): CostLine {
+  const kind = record.kind.toLowerCase();
+  return {
+    taskId: record.taskId ?? record.id,
+    taskTitle: record.task?.title ?? "Untied charge",
+    provider: record.model?.provider.slug ?? "unknown",
+    modelId: record.model?.slug ?? "unknown",
+    modelName: record.model?.name ?? "Unknown model",
+    kind: isCostKind(kind) ? kind : "initial",
+    amountUsd: record.amount.toString(),
+    inputTokens: record.inputTokens,
+    outputTokens: record.outputTokens,
+    cachedInputTokens: record.cachedInputTokens,
+    toolCalls: record.toolCalls,
+    durationMs: record.durationMs,
+  };
+}
+
+function isCostKind(value: string): value is CostKind {
+  return value === "initial" || value === "retry" || value === "debug" || value === "escalation" || value === "verification";
 }
 
 export async function getActivity(input: unknown = { limit: 50 }): Promise<LoadState<ActivityEntry[]>> {

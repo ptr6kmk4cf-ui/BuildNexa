@@ -42,7 +42,7 @@ async function NewProjectForm({
         <CardTitle>Plan the work</CardTitle>
         <CardDescription>
           Savings keeps the graph short. Balanced follows the delivery order. Quality adds planning and documentation.
-          The budget is recorded for a later phase.
+          The budget is the approved limit. Part of it stays reserved, and a run does not spend past it unless you allow that.
         </CardDescription>
       </CardHeader>
       <CardContent>

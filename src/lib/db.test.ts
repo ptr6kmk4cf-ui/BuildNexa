@@ -102,7 +102,15 @@ describe("database initialization", () => {
     expect(executionHeartbeat).toContain("heartbeatAt");
     expect(schema).toContain("heartbeatAt");
     expect(schema).toContain("ignoredCommand");
+    const costMigration = readFileSync(
+      "prisma/migrations/20261008270000_cost_budget/migration.sql",
+      "utf8",
+    );
     expect(verificationMigration).toContain("VerificationOutcome");
+    expect(costMigration).toContain("CREATE TYPE \"CostKind\"");
+    expect(costMigration).toContain("authorizeOverBudget");
+    expect(schema).toContain("enum CostKind");
+    expect(schema).toContain("authorizeOverBudget");
     expect(schema).toContain("enum VerificationOutcome");
     expect(schema).toContain("enum ExecutionState");
     expect(schema).toContain("enum OptimizationMode");

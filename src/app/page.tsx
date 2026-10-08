@@ -61,7 +61,7 @@ function DashboardReady({
     { label: "Projects", value: String(data.projectCount), hint: "Objectives on record" },
     { label: "Tasks", value: String(data.taskCount), hint: "Planned, not executed" },
     { label: "Enabled models", value: String(data.enabledModelCount), hint: "Registry models for enabled providers" },
-    { label: "Recorded spend", value: formatUsd(data.recordedSpendUsd), hint: "USD cost records" },
+    { label: "Recorded spend", value: formatUsd(data.recordedSpendUsd), hint: "USD provider charges" },
   ];
 
   return (

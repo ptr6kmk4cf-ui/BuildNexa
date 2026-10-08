@@ -212,8 +212,12 @@ describe("task execution", () => {
         currency: "USD",
         inputTokens: 1000,
         outputTokens: 500,
+        cachedInputTokens: 0,
+        toolCalls: 0,
+        durationMs: report.tasks[0]?.durationMs,
         provider: "openai",
         modelId: "gpt-test",
+        kind: "initial",
       },
     ]);
   });

@@ -1,4 +1,5 @@
 import type { ProviderFailure, ProviderId, TokenCounts } from "@/lib/ai/types";
+import type { CostKind } from "@/lib/budget/types";
 import type { TaskDifficulty, TaskPriority, TaskType } from "@/lib/planner/types";
 import type { TaskVerification } from "@/lib/verification/types";
 
@@ -54,8 +55,11 @@ export type ExecutionAttempt = {
   error: string | null;
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens: number;
+  toolCalls: number;
   durationMs: number;
   actualCostUsd: string | null;
+  kind: CostKind;
 };
 
 export type TaskExecutionResult = {
@@ -69,6 +73,8 @@ export type TaskExecutionResult = {
   error: string | null;
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens: number;
+  toolCalls: number;
   durationMs: number;
   estimatedCostUsd: string | null;
   actualCostUsd: string | null;
@@ -86,8 +92,12 @@ export type ExecutionCost = {
   currency: "USD";
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens: number;
+  toolCalls: number;
+  durationMs: number;
   provider: ProviderId;
   modelId: string;
+  kind: CostKind;
 };
 
 export type ExecutionReport =
