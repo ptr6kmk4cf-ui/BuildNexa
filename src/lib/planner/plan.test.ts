@@ -122,6 +122,21 @@ describe("project planner", () => {
       false,
     );
     expect(createPlan({ goal: "Fix it", optimizationMode: "quality", budgetUsd: "5" }).ok).toBe(false);
+    expect(createPlan({ goal: "Change my zip code today", optimizationMode: "balanced", budgetUsd: "5" }).ok).toBe(
+      false,
+    );
+  });
+
+  it("keeps a security review when authentication is requested alongside a login label", () => {
+    const result = createPlan({
+      goal: "Add Google authentication and fix the login button label.",
+      optimizationMode: "balanced",
+      budgetUsd: "20",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.tasks.map((entry) => entry.id)).toContain("security-review");
+    expect(result.plan.tasks.map((entry) => entry.id)).toContain("frontend");
   });
 
   it("refuses a dependency that would create a cycle", () => {

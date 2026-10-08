@@ -1,7 +1,7 @@
 import "server-only";
 import { io } from "next/cache";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { AppError } from "@/lib/errors";
+import { AppError, uniqueRecordMessage } from "@/lib/errors";
 import { LOCAL_OPERATOR_EMAIL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
 import { getPrisma, initializeDatabase } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
@@ -539,9 +539,8 @@ export async function createProjectRecord(
     if (error instanceof AppError) {
       return { ok: false, message: error.message };
     }
-    if (isUniqueConflict(error)) {
-      return { ok: false, message: "That repository is already attached to a project." };
-    }
+    const conflict = uniqueRecordMessage(error);
+    if (conflict) return { ok: false, message: conflict };
     logger.error("Could not save project", { error });
     return {
       ok: false,
@@ -601,14 +600,10 @@ export async function attachRepositoryRecord(input: {
     return { ok: true };
   } catch (error) {
     if (error instanceof AppError) return { ok: false, message: error.message };
-    if (isUniqueConflict(error)) {
-      return { ok: false, message: "That repository is already attached to a project." };
-    }
+    const conflict = uniqueRecordMessage(error);
+    if (conflict) return { ok: false, message: conflict };
     logger.error("Could not attach repository", { error });
     return { ok: false, message: "The repository could not be attached." };
   }
 }
 
-function isUniqueConflict(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
-}

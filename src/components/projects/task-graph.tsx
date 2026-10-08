@@ -27,7 +27,7 @@ export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: Grap
               ↓
             </p>
           ) : null}
-          <ul className="grid gap-3 sm:grid-cols-2">
+          <ul className={level.length > 1 ? "grid gap-3 sm:grid-cols-2" : "mx-auto grid w-full max-w-xl gap-3"}>
             {level.map((task) => (
               <li key={task.id}>
                 <Link

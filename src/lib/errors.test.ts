@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AppError, InputValidationError } from "@/lib/errors";
+import { AppError, InputValidationError, uniqueRecordMessage } from "@/lib/errors";
 import { toPublicError } from "@/lib/http";
 
 describe("error handling", () => {
@@ -24,6 +24,16 @@ describe("error handling", () => {
     expect(errorSpy.mock.calls.join(" ")).not.toContain("supersecret");
     expect(errorSpy.mock.calls.join(" ")).toContain("postgresql://[redacted]");
     errorSpy.mockRestore();
+  });
+
+  it("names a slug conflict separately from a repository conflict", () => {
+    expect(uniqueRecordMessage({ code: "P2002", meta: { target: ["userId", "slug"] } })).toBe(
+      "A project with that name already exists. Adjust the goal and try again.",
+    );
+    expect(uniqueRecordMessage({ code: "P2002", meta: { target: ["connectedRepositoryId"] } })).toBe(
+      "That repository is already attached to a project.",
+    );
+    expect(uniqueRecordMessage(new Error("duplicate"))).toBeNull();
   });
 
   it("keeps a safe message on AppError", () => {

@@ -12,7 +12,7 @@ import type {
 } from "@/lib/planner/types";
 
 const SOFTWARE =
-  /\b(api|endpoint|endpoints|database|schema|migration|frontend|backend|interface|component|authentication|oauth|login|tests?|bug|repository|page|screen|ui|readme|code|function|module|app|application|website|server|button|form|route|pull request|refactor|debug|homepage)\b/i;
+  /\b(api|endpoint|endpoints|database|schema|migration|frontend|backend|interface|component|authentication|oauth|login|tests?|bug|repository|page|screen|ui|readme|app|application|website|server|button|form|route|pull request|refactor|debug|homepage)\b/i;
 
 const INVALID_MESSAGE = "Describe a software change, such as the feature, bug, or tests to add.";
 
@@ -89,10 +89,10 @@ function detectAreas(goal: string): Set<Area> {
 }
 
 function requestsAuthSystem(goal: string): boolean {
-  if (/\blogin\s+(button|label|text|copy|color|style)\b/i.test(goal)) return false;
   if (/\b(authentication|oauth|sso|sign-in|signin|signup|sign-up|password|credential)\b/i.test(goal)) return true;
   if (/\b(google|apple)\b/i.test(goal) && /\b(auth|login|sign)\b/i.test(goal)) return true;
-  return /\blogin\s+(interface|page|screen|flow|form)\b/i.test(goal);
+  if (/\blogin\s+(interface|page|screen|flow|form)\b/i.test(goal)) return true;
+  return false;
 }
 
 function isBroad(areas: Set<Area>, auth: boolean): boolean {

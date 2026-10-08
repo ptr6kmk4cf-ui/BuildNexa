@@ -1,13 +1,14 @@
 import "server-only";
 import { io } from "next/cache";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
-import { AppError } from "@/lib/errors";
+import { AppError, uniqueRecordMessage } from "@/lib/errors";
 import type { ProjectRepositoryLink } from "@/lib/github/types";
 import { LOCAL_OPERATOR_EMAIL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
 import { getPrisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { readContextRequests, validatePlan } from "@/lib/planner";
 import type { OptimizationMode, PlannedWork } from "@/lib/planner";
+import { excerpt } from "@/lib/format";
 import { slugify } from "@/lib/slug";
 import { idSchema } from "@/lib/validation";
 import { readWorkspace, type LoadState } from "@/server/load";
@@ -105,6 +106,7 @@ export async function savePlannedProject(input: {
           userId: user.id,
           name: input.name,
           slug,
+          description: excerpt(input.goal, 240),
           objective: input.goal,
           status: "DRAFT",
           optimizationMode: MODE[input.optimizationMode],
@@ -202,9 +204,8 @@ export async function savePlannedProject(input: {
     return { ok: true, id: project.id };
   } catch (error) {
     if (error instanceof AppError) return { ok: false, message: error.message };
-    if (isUniqueConflict(error)) {
-      return { ok: false, message: "That repository is already attached to a project." };
-    }
+    const conflict = uniqueRecordMessage(error);
+    if (conflict) return { ok: false, message: conflict };
     logger.error("Could not save project plan", { error });
     return { ok: false, message: "The plan could not be saved. Check the database connection and migration." };
   }
@@ -269,6 +270,3 @@ async function uniqueSlug(tx: Pick<PrismaClient, "project">, userId: string, nam
   throw new AppError("A unique project address could not be created.", { code: "slug_exhausted", status: 409 });
 }
 
-function isUniqueConflict(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
-}

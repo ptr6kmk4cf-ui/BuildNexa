@@ -5,7 +5,7 @@ import { ProjectStatusBadge } from "@/components/status-badge";
 import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatTimestamp, formatUsd } from "@/lib/format";
+import { excerpt, formatTimestamp, formatUsd } from "@/lib/format";
 import { labelBudgetPeriod, labelOptimizationMode, labelPullRequestStatus } from "@/lib/labels";
 import { AttachRepositoryForm } from "@/components/github/attach-repository-form";
 import { TaskGraph } from "@/components/projects/task-graph";
@@ -64,7 +64,7 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
       <PageHeader
         eyebrow={project.slug}
         title={project.name}
-        description={project.description ?? "No description yet."}
+        description={project.description ?? excerpt(project.objective, 200) ?? "No description yet."}
         actions={<ProjectStatusBadge status={project.status} />}
       />
       <div className="mb-6 rounded-xl border border-border bg-card px-5 py-4">

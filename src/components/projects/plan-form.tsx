@@ -41,13 +41,13 @@ export function PlanForm({
           rows={6}
           placeholder="Add Google and Apple authentication, update the database, create the API endpoints, build the login interface, add tests, and prepare a pull request."
           aria-invalid={Boolean(state.fieldErrors.goal)}
-          aria-describedby={state.fieldErrors.goal ? "plan-goal-error" : "plan-goal-hint"}
+          aria-describedby={state.fieldErrors.goal ? "plan-goal-error plan-goal-hint" : "plan-goal-hint"}
         />
         <p id="plan-goal-hint" className="text-xs text-muted-foreground">
           Describe the software change. The project name is taken from the first clause. Planning builds a task graph and does not call a model, edit files, or open a pull request.
         </p>
         {state.fieldErrors.goal ? (
-          <p id="plan-goal-error" className="text-xs text-destructive">
+          <p id="plan-goal-error" role="alert" className="text-xs text-destructive">
             {state.fieldErrors.goal.join(" ")}
           </p>
         ) : null}
@@ -62,13 +62,13 @@ export function PlanForm({
             required
             placeholder="25.00"
             aria-invalid={Boolean(state.fieldErrors.budget)}
-            aria-describedby={state.fieldErrors.budget ? "plan-budget-error" : "plan-budget-hint"}
+            aria-describedby={state.fieldErrors.budget ? "plan-budget-error plan-budget-hint" : "plan-budget-hint"}
           />
           <p id="plan-budget-hint" className="text-xs text-muted-foreground">
             Stored as the project limit. This step does not spend it.
           </p>
           {state.fieldErrors.budget ? (
-            <p id="plan-budget-error" className="text-xs text-destructive">
+            <p id="plan-budget-error" role="alert" className="text-xs text-destructive">
               {state.fieldErrors.budget.join(" ")}
             </p>
           ) : null}
@@ -80,7 +80,7 @@ export function PlanForm({
             name="optimizationMode"
             defaultValue="balanced"
             aria-invalid={Boolean(state.fieldErrors.optimizationMode)}
-            aria-describedby={state.fieldErrors.optimizationMode ? "plan-mode-error" : "plan-mode-hint"}
+            aria-describedby={state.fieldErrors.optimizationMode ? "plan-mode-error plan-mode-hint" : "plan-mode-hint"}
           >
             <option value="savings">Savings — shorter plan</option>
             <option value="balanced">Balanced — standard delivery order</option>
@@ -90,7 +90,7 @@ export function PlanForm({
             Changes how many tasks are created. It does not select a model.
           </p>
           {state.fieldErrors.optimizationMode ? (
-            <p id="plan-mode-error" className="text-xs text-destructive">
+            <p id="plan-mode-error" role="alert" className="text-xs text-destructive">
               {state.fieldErrors.optimizationMode.join(" ")}
             </p>
           ) : null}
@@ -105,7 +105,9 @@ export function PlanForm({
             name="repositoryId"
             defaultValue={repositoryDefault}
             aria-invalid={Boolean(state.fieldErrors.repositoryId)}
-            aria-describedby="plan-repository-hint"
+            aria-describedby={
+              state.fieldErrors.repositoryId ? "plan-repository-error plan-repository-hint" : "plan-repository-hint"
+            }
           >
             <option value="">No repository yet</option>
             {repositories.map((repository) => (
@@ -119,7 +121,9 @@ export function PlanForm({
             Only the name, branch, visibility, and description are used. The repository files stay unread.
           </p>
           {state.fieldErrors.repositoryId ? (
-            <p className="text-xs text-destructive">{state.fieldErrors.repositoryId.join(" ")}</p>
+            <p id="plan-repository-error" role="alert" className="text-xs text-destructive">
+              {state.fieldErrors.repositoryId.join(" ")}
+            </p>
           ) : null}
         </div>
       ) : (
