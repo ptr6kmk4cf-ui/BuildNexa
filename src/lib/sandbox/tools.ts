@@ -10,7 +10,8 @@ export type SandboxLog = {
   detail: string;
 };
 
-export function createFileTools(root: string, logs: SandboxLog[]) {
+export function createFileTools(root: string, logs: SandboxLog[], options?: { maxSearchFiles?: number }) {
+  const maxSearchFiles = options?.maxSearchFiles ?? SANDBOX_LIMITS.maxSearchFiles;
   return {
     logs,
     async readFile(requested: string): Promise<string> {
@@ -52,7 +53,7 @@ export function createFileTools(root: string, logs: SandboxLog[]) {
     async deleteFile(requested: string): Promise<void> {
       await record(logs, "delete_file", requested, async () => {
         const rootReal = await resolveInside(root, ".");
-        const target = await resolveInside(root, requested);
+        const target = await resolveInside(root, requested, { keepFinalSymlink: true });
         if (target === rootReal) throw new SandboxPathError("The workspace root cannot be deleted.");
         const link = await lstat(target);
         if (link.isSymbolicLink()) {
@@ -79,27 +80,28 @@ export function createFileTools(root: string, logs: SandboxLog[]) {
         if (!query.trim() || query.length > 200) throw new SandboxPathError("The search text is not allowed.");
         const rootReal = await resolveInside(root, ".");
         const found: string[] = [];
-        await walk(rootReal, rootReal, query, found);
+        await walk(rootReal, rootReal, query, found, { seen: 0, max: maxSearchFiles });
         return found;
       });
     },
   };
 }
 
-async function walk(root: string, directory: string, query: string, found: string[]): Promise<void> {
-  if (found.length >= 50) return;
+async function walk(root: string, directory: string, query: string, found: string[], budget: { seen: number; max: number }): Promise<void> {
+  if (found.length >= 50 || budget.seen >= budget.max) return;
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
-    if (found.length >= 50) return;
+    if (found.length >= 50 || budget.seen >= budget.max) return;
     if (entry.name === ".git" || entry.name === "node_modules") continue;
     const full = path.join(directory, entry.name);
     if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       if (!isInsideRoot(root, full)) continue;
-      await walk(root, full, query, found);
+      await walk(root, full, query, found, budget);
       continue;
     }
     if (!entry.isFile()) continue;
+    budget.seen += 1;
     const info = await stat(full);
     if (info.size > SANDBOX_LIMITS.maxFileBytes) continue;
     const text = await readFile(full, "utf8").catch(() => "");

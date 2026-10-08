@@ -3,6 +3,9 @@ import path from "node:path";
 
 export type RuntimeBind = { from: string; to: string };
 
+// The shell stops before exec. The host moves that process into the cgroup, then continues it.
+export const SANDBOX_LAUNCH = ["/bin/sh", "-c", "kill -STOP $$; exec \"$@\"", "sandbox"] as const;
+
 const SECRET_ENV = /(KEY|TOKEN|SECRET|PASSWORD|DATABASE_URL|CIPHER|CREDENTIAL)/i;
 
 export function applicationRealPath(cwd = process.cwd()): string {
@@ -87,7 +90,7 @@ export function bwrapArguments(input: {
     if (!value) continue;
     args.push("--setenv", key, value);
   }
-  args.push("--", input.command, ...input.args);
+  args.push("--", ...SANDBOX_LAUNCH, input.command, ...input.args);
   return args;
 }
 

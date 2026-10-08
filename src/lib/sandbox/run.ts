@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type { SandboxLimits } from "@/lib/sandbox/limits";
 import { SANDBOX_LIMITS } from "@/lib/sandbox/limits";
 import { bwrapArguments, type RuntimeBind } from "@/lib/sandbox/bwrap";
 import { createSandboxCgroup, sandboxCgroupParent } from "@/lib/sandbox/cgroup";
+
+const PAUSE_WAIT_MS = 2_000;
 
 export type IsolatedResult = {
   ok: boolean;
@@ -108,28 +111,19 @@ async function waitForSandbox(
     child.kill("SIGKILL");
     return { ok: false, exitCode: null, output, durationMs: Date.now() - started, timedOut: false, error: "The sandbox process did not start." };
   }
-  try {
-    await cgroup.place(child.pid);
-  } catch {
-    let alive = true;
-    try {
-      process.kill(child.pid, 0);
-    } catch {
-      alive = false;
-    }
-    if (alive) {
-      killTree(child.pid);
-      return { ok: false, exitCode: null, output, durationMs: Date.now() - started, timedOut: false, error: "The sandbox process could not be placed under resource limits, so it was stopped." };
-    }
+  const held = await holdUntilLimited(child.pid, cgroup);
+  if (!held.ok) {
+    killTree(child.pid);
+    return { ok: false, exitCode: child.exitCode, output, durationMs: Date.now() - started, timedOut: false, error: held.error };
   }
   if (child.exitCode !== null || child.signalCode !== null) {
     return {
-      ok: child.exitCode === 0,
+      ok: false,
       exitCode: child.exitCode,
       output,
       durationMs: Date.now() - started,
       timedOut: false,
-      error: child.exitCode === 0 ? null : "The sandbox command exited before its limits were confirmed.",
+      error: "The sandbox command exited before its limits were confirmed.",
     };
   }
   return new Promise((resolve) => {
@@ -159,14 +153,98 @@ async function waitForSandbox(
   });
 }
 
-function killTree(pid: number): void {
+async function holdUntilLimited(pid: number, cgroup: { place(pid: number): Promise<void> }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const deadline = Date.now() + PAUSE_WAIT_MS;
+  let tree: number[] | null = null;
+  while (Date.now() < deadline) {
+    if ((await processState(pid)) === null) {
+      return { ok: false, error: "The sandbox command exited before its limits were confirmed." };
+    }
+    const pids = await processTree(pid);
+    const states = await Promise.all(pids.map(async (id) => processState(id)));
+    if (states.includes("T")) {
+      tree = pids;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  if (!tree) {
+    return { ok: false, error: "The sandbox process could not be placed under resource limits, so it was stopped." };
+  }
   try {
-    process.kill(-pid, "SIGKILL");
+    for (const id of tree) await cgroup.place(id);
+    const again = await processTree(pid);
+    for (const id of again) {
+      if (!tree.includes(id)) await cgroup.place(id);
+    }
+    const paused = await processTree(pid);
+    let continued = false;
+    for (const id of paused) {
+      if ((await processState(id)) !== "T") continue;
+      process.kill(id, "SIGCONT");
+      continued = true;
+    }
+    if (!continued) {
+      return { ok: false, error: "The sandbox process could not be placed under resource limits, so it was stopped." };
+    }
   } catch {
+    return { ok: false, error: "The sandbox process could not be placed under resource limits, so it was stopped." };
+  }
+  return { ok: true };
+}
+
+async function processTree(pid: number): Promise<number[]> {
+  const children = await childPids(pid);
+  const nested = await Promise.all(children.map((child) => processTree(child)));
+  return [pid, ...nested.flat()];
+}
+
+async function childPids(pid: number): Promise<number[]> {
+  try {
+    const text = await readFile(/*turbopackIgnore: true*/ `/proc/${pid}/task/${pid}/children`, "utf8");
+    return text.trim().split(/\s+/).filter(Boolean).map(Number).filter((value) => Number.isInteger(value) && value > 0);
+  } catch {
+    return [];
+  }
+}
+
+async function processState(pid: number): Promise<string | null> {
+  try {
+    const stat = await readFile(/*turbopackIgnore: true*/ `/proc/${pid}/stat`, "utf8");
+    const marker = stat.lastIndexOf(")");
+    if (marker < 0) return null;
+    return stat.slice(marker + 2, marker + 3) || null;
+  } catch {
+    return null;
+  }
+}
+
+function killTree(pid: number): void {
+  const order: number[] = [];
+  const visit = (current: number) => {
+    for (const child of childPidsSync(current)) visit(child);
+    order.push(current);
+  };
+  visit(pid);
+  for (const id of order) {
     try {
-      process.kill(pid, "SIGKILL");
+      process.kill(id, "SIGKILL");
     } catch {
       // The process already exited.
     }
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // The process group already exited.
+  }
+}
+
+function childPidsSync(pid: number): number[] {
+  try {
+    const text = readFileSync(/*turbopackIgnore: true*/ `/proc/${pid}/task/${pid}/children`, "utf8");
+    return text.trim().split(/\s+/).filter(Boolean).map(Number).filter((value) => Number.isInteger(value) && value > 0);
+  } catch {
+    return [];
   }
 }

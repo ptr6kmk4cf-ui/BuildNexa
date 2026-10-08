@@ -105,10 +105,14 @@ export async function openGithubRepository(input: {
     await rm(hostRoot, { recursive: true, force: true });
     throw new Error("The GitHub repository could not be cloned into the sandbox.");
   }
-  if (input.token && `${cloned.output}${cloned.error ?? ""}`.includes(input.token)) {
-    throw new Error("The sandbox output included a credential and was discarded.");
-  }
+  await discardLeakedCredential(hostRoot, input.token, `${cloned.output}${cloned.error ?? ""}`);
   return finishOpen({ hostRoot, repoDir, branch: input.branch, baseBranch: input.baseBranch, runtime });
+}
+
+export async function discardLeakedCredential(directory: string, token: string | null | undefined, output: string): Promise<void> {
+  if (!token || !output.includes(token)) return;
+  await rm(directory, { recursive: true, force: true });
+  throw new Error("The sandbox output included a credential and was discarded.");
 }
 
 async function finishOpen(input: {
@@ -148,7 +152,12 @@ async function finishOpen(input: {
       }
     },
     async persist() {
-      await git(input.repoDir, ["add", "-A"], input.runtime);
+      const added = await git(input.repoDir, ["add", "-A"], input.runtime);
+      if (!added.ok) {
+        const summary = `Sandbox edits could not be staged on ${input.branch}.`;
+        logs.push({ op: "persist", path: input.branch, ok: false, detail: summary });
+        return { summary, diff: "", branch: input.branch };
+      }
       const diff = await git(input.repoDir, ["diff", "--cached", "--"], input.runtime);
       const text = diff.output.trim();
       if (!text) return { summary: `No file changes on ${input.branch}.`, diff: "", branch: input.branch };

@@ -13,7 +13,7 @@ export function isInsideRoot(root: string, target: string): boolean {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
 }
 
-export async function resolveInside(root: string, requested: string): Promise<string> {
+export async function resolveInside(root: string, requested: string, options?: { keepFinalSymlink?: boolean }): Promise<string> {
   if (typeof requested !== "string" || requested.length === 0 || requested.length > 500) {
     throw new SandboxPathError("That path is not allowed.");
   }
@@ -27,8 +27,10 @@ export async function resolveInside(root: string, requested: string): Promise<st
   if (parts.some((part) => part === "..")) throw new SandboxPathError("That path is not allowed.");
 
   let current = rootReal;
-  for (const part of parts) {
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index] ?? "";
     const next = path.join(current, part);
+    const finalPart = index === parts.length - 1;
     let linked = false;
     try {
       const stat = await lstat(next);
@@ -38,6 +40,10 @@ export async function resolveInside(root: string, requested: string): Promise<st
       current = next;
       if (!isInsideRoot(rootReal, current)) throw new SandboxPathError("That path is not allowed.");
       continue;
+    }
+    if (linked && finalPart && options?.keepFinalSymlink) {
+      if (!isInsideRoot(rootReal, next)) throw new SandboxPathError("That path is not allowed.");
+      return next;
     }
     if (linked) {
       let target: string;

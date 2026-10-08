@@ -1,13 +1,13 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { bwrapArguments, sandboxEnvLeaks } from "@/lib/sandbox/bwrap";
+import { bwrapArguments, SANDBOX_LAUNCH, sandboxEnvLeaks } from "@/lib/sandbox/bwrap";
 import { detectProject } from "@/lib/sandbox/detect";
 import { parseToolCall } from "@/lib/sandbox/agent";
-import { githubCloneUrl, openLocalRepository, sandboxBranchName } from "@/lib/sandbox/workflow";
+import { discardLeakedCredential, githubCloneUrl, openLocalRepository, sandboxBranchName } from "@/lib/sandbox/workflow";
 import { runIsolated, sandboxRuntime } from "@/lib/sandbox/run";
 import { createFileTools } from "@/lib/sandbox/tools";
 import type { SandboxLog } from "@/lib/sandbox/tools";
@@ -85,6 +85,10 @@ describe("workspace paths", () => {
     await tools.editFile("note.txt", "hello", "edited");
     expect(await tools.searchFiles("edited")).toEqual(["note.txt"]);
     await tools.deleteFile("src/new.txt");
+    await symlink(outside, path.join(root, "bridge"));
+    await tools.deleteFile("bridge");
+    expect(await readFile(outside, "utf8")).toBe("secret");
+    await expect(lstat(path.join(root, "bridge"))).rejects.toThrow();
     expect(logs.map((entry) => entry.op)).toEqual([
       "read_file",
       "read_file",
@@ -96,9 +100,21 @@ describe("workspace paths", () => {
       "edit_file",
       "search_files",
       "delete_file",
+      "delete_file",
     ]);
     expect(logs.every((entry) => !entry.detail.includes("secret"))).toBe(true);
     expect(await readFile(outside, "utf8")).toBe("secret");
+  });
+
+  it("stops searching after the file limit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "apo-search-"));
+    cleanups.push(root);
+    await mkdir(path.join(root, "src"));
+    await writeFile(path.join(root, "src", "a.ts"), "needle");
+    await writeFile(path.join(root, "src", "b.ts"), "needle");
+    await writeFile(path.join(root, "src", "c.ts"), "needle");
+    const tools = createFileTools(root, [], { maxSearchFiles: 2 });
+    expect(await tools.searchFiles("needle")).toHaveLength(2);
   });
 });
 
@@ -134,7 +150,8 @@ describe("sandbox command line", () => {
     expect(args).not.toContain("--unshare-net");
     expect(args).toContain("ghp_supersecret");
     expect(args.filter((arg) => arg === "ghp_supersecret")).toHaveLength(1);
-    expect(args.slice(args.indexOf("--") + 1)).toEqual(["git", "clone", "https://github.com/acme/web.git", "."]);
+    expect(args.slice(args.indexOf("--") + 1)).toEqual([...SANDBOX_LAUNCH, "git", "clone", "https://github.com/acme/web.git", "."]);
+    expect(args.join("\n").split("ghp_supersecret").length - 1).toBe(1);
   });
 });
 
@@ -145,6 +162,16 @@ describe("github clone address", () => {
     expect(githubCloneUrl("http://github.com/acme/web")).toBeNull();
     expect(githubCloneUrl("https://example.com/acme/web")).toBeNull();
     expect(sandboxBranchName("proj_123")).toMatch(/^apo\/proj123-/);
+  });
+});
+
+describe("leaked credentials", () => {
+  it("removes the workspace when output contains the token", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "apo-leak-"));
+    cleanups.push(directory);
+    await writeFile(path.join(directory, "repo.txt"), "kept");
+    await expect(discardLeakedCredential(directory, "ghp_secret", "fatal: ghp_secret")).rejects.toThrow(/discarded/);
+    await expect(readFile(path.join(directory, "repo.txt"), "utf8")).rejects.toThrow();
   });
 });
 
@@ -168,6 +195,18 @@ describe("isolated execution", () => {
     });
     expect(runaway.timedOut).toBe(true);
     expect(runaway.ok).toBe(false);
+
+    const marked = await runIsolated({
+      command: "cat",
+      args: ["/proc/self/cgroup"],
+      workspace: await scratch(),
+      timeoutMs: 10_000,
+      network: false,
+      parent: runtime.parent,
+      bwrap: runtime.bwrap,
+    });
+    expect(marked.ok).toBe(true);
+    expect(marked.output).toContain(`/${path.basename(runtime.parent)}/`);
 
     const hidden = path.join(tmpdir(), `apo-hidden-${Date.now()}`);
     await writeFile(hidden, "host-secret");
