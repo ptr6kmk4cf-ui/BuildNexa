@@ -1,7 +1,7 @@
 // AI Project Optimizer data model.
-// Phase 5 stores a model routing decision for each task.
+// Phase 6 records a task execution. The model reply is stored.
 // API keys are not stored. GitHub access tokens remain ciphertext only.
-// Routing does not execute tasks or modify a repository.
+// Execution does not run shell commands or modify a repository.
 
 generator client {
   provider = "prisma-client"
@@ -99,6 +99,22 @@ enum TaskDifficulty {
   HIGH
 }
 
+enum ExecutionState {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  ESCALATED
+  CANCELLED
+}
+
+enum ExecutionRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -134,8 +150,9 @@ model Project {
   tasks        Task[]
   budgets      Budget[]
   pullRequests PullRequest[]
-  costRecords  CostRecord[]
-  auditLogs    AuditLog[]
+  costRecords   CostRecord[]
+  auditLogs     AuditLog[]
+  executionRuns ExecutionRun[]
 
   @@unique([userId, slug])
   @@index([userId, status])
@@ -193,6 +210,7 @@ model Model {
   provider    Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
   decisions   ModelDecision[]
   attempts    TaskAttempt[]
+  executions  TaskExecution[]
   tokenUsages TokenUsage[]
   costRecords CostRecord[]
 
@@ -244,6 +262,7 @@ model Task {
   attempts      TaskAttempt[]
   decisions     ModelDecision[]
   verifications Verification[]
+  executions    TaskExecution[]
 
   @@unique([planId, planKey])
   @@index([projectId, status])
@@ -285,6 +304,68 @@ model TaskAttempt {
   @@index([taskId, status])
   @@index([modelId])
   @@index([createdAt])
+}
+
+model ExecutionRun {
+  id              String             @id @default(cuid())
+  projectId       String
+  status          ExecutionRunStatus @default(RUNNING)
+  cancelRequested Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  finishedAt      DateTime?
+
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  executions TaskExecution[]
+
+  @@index([projectId, createdAt])
+  @@index([status])
+}
+
+model TaskExecution {
+  id               String         @id @default(cuid())
+  taskId           String
+  runId            String?
+  state            ExecutionState
+  attemptCount     Int            @default(0)
+  provider         String?
+  modelSlug        String?
+  modelId          String?
+  result           String?        @db.Text
+  errorMessage     String?        @db.Text
+  inputTokens      Int            @default(0)
+  outputTokens     Int            @default(0)
+  durationMs       Int            @default(0)
+  estimatedCost    Decimal?       @db.Decimal(14, 6)
+  actualCost       Decimal?       @db.Decimal(14, 6)
+  escalated        Boolean        @default(false)
+  ignoredCommand   Boolean        @default(false)
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime       @default(now())
+
+  task  Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  run   ExecutionRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  model Model?        @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  logs  ExecutionLog[]
+
+  @@index([taskId, createdAt])
+  @@index([modelId])
+  @@index([runId])
+}
+
+model ExecutionLog {
+  id          String         @id @default(cuid())
+  executionId String
+  taskId      String
+  state       ExecutionState
+  attempt     Int            @default(0)
+  message     String         @db.Text
+  createdAt   DateTime       @default(now())
+
+  execution TaskExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId, createdAt])
+  @@index([taskId, createdAt])
 }
 
 model ModelDecision {

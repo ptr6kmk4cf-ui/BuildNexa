@@ -4,7 +4,7 @@ import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { SetupHint } from "@/components/states/setup-hint";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProviderForm } from "@/components/settings/provider-form";
-import { APP_PHASE, LOCAL_OPERATOR_NAME } from "@/lib/constants";
+import { APP_PHASE_LABEL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
 import { loadAiCatalog } from "@/server/ai";
 import { loadGithubPage } from "@/server/github";
 import { getSettings } from "@/server/workspace";
@@ -44,7 +44,7 @@ async function SettingsPanel() {
           : "Not connected";
 
   const rows = [
-    { label: "Phase", value: `${APP_PHASE}, model routing` },
+    { label: "Phase", value: APP_PHASE_LABEL.replace("Phase ", "") },
     { label: "Database", value: databaseLabel[settings.database] },
     { label: "GitHub", value: githubStatus },
     { label: "Log level", value: settings.logLevel },

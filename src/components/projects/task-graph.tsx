@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { groupByDependencyDepth } from "@/lib/planner";
-import { labelTaskPriority, labelTaskType } from "@/lib/labels";
+import { labelExecutionState, labelTaskPriority, labelTaskType } from "@/lib/labels";
 
 export type GraphTask = {
   id: string;
@@ -12,6 +12,7 @@ export type GraphTask = {
   complexity: number;
   dependsOn: string[];
   modelLabel?: string | null;
+  executionLabel?: string | null;
 };
 
 export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: GraphTask[] }) {
@@ -42,6 +43,7 @@ export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: Grap
                   <span className="mt-2 block text-xs text-muted-foreground">
                     {labelTaskPriority(task.priority)} priority · Complexity {task.complexity} of 5
                     {task.modelLabel ? ` · ${task.modelLabel}` : ""}
+                    {task.executionLabel ? ` · ${labelExecutionState(task.executionLabel)}` : ""}
                     {task.planKey ? ` · ${task.planKey}` : ""}
                   </span>
                 </Link>

@@ -7,7 +7,7 @@ import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { labelOptimizationMode, labelRoutingOutcome, labelTaskDifficulty, labelTaskPriority, labelTaskType } from "@/lib/labels";
+import { labelExecutionState, labelOptimizationMode, labelRoutingOutcome, labelTaskDifficulty, labelTaskPriority, labelTaskType } from "@/lib/labels";
 import { getPlannedTask, type PlannedTaskDetail } from "@/server/plan";
 
 export const metadata = { title: "Task" };
@@ -55,7 +55,11 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
       <PageHeader
         eyebrow={task.projectName}
         title={task.title}
-        description="This task is part of the plan. It has not been executed, and no model has been selected for it."
+        description={
+          task.execution
+            ? "The stored reply came from the selected model. It was not run as a command, and the repository was not changed."
+            : "This task is part of the plan. Run it from the project page after a model has been chosen."
+        }
         actions={<TaskStatusBadge status={task.status} />}
       />
       <p className="mb-6 text-sm">
@@ -160,6 +164,52 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">Choose models from the project page to record a decision.</p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Execution</CardTitle>
+              <CardDescription>
+                {task.execution
+                  ? "Tokens, cost, and the stored reply from the latest run."
+                  : "No run is stored yet. Running a task does not execute shell commands."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {task.execution ? (
+                <>
+                  <p className="text-sm">
+                    {labelExecutionState(task.execution.state)}
+                    {task.execution.escalated ? " · Escalated" : ""}
+                    {task.execution.modelName ? ` · ${task.execution.modelName}` : ""}
+                    {task.execution.modelSlug ? ` (${task.execution.modelSlug})` : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {task.execution.provider ? `${task.execution.provider} · ` : ""}
+                    {task.execution.attemptCount} attempts · {task.execution.durationMs} ms · {task.execution.inputTokens} input tokens · {task.execution.outputTokens} output tokens
+                    {task.execution.estimatedCostUsd ? ` · Estimated $${task.execution.estimatedCostUsd}` : ""}
+                    {task.execution.actualCostUsd ? ` · Actual $${task.execution.actualCostUsd}` : ""}
+                  </p>
+                  {task.execution.error ? <p className="text-sm text-destructive">{task.execution.error}</p> : null}
+                  {task.execution.ignoredCommand ? (
+                    <p className="text-sm text-muted-foreground">The reply looked like a shell command. It was stored and not run.</p>
+                  ) : null}
+                  {task.execution.result ? (
+                    <p className="text-sm leading-6 whitespace-pre-wrap">{task.execution.result}</p>
+                  ) : null}
+                  {task.execution.logs.length > 0 ? (
+                    <ul className="grid gap-2 border-t border-border pt-3">
+                      {task.execution.logs.map((entry) => (
+                        <li key={entry.id} className="text-xs text-muted-foreground">
+                          {labelExecutionState(entry.state)} · {entry.message}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Run tasks from the project page to call the selected model.</p>
               )}
             </CardContent>
           </Card>

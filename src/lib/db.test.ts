@@ -13,6 +13,9 @@ const REQUIRED_MODELS = [
   "Task",
   "TaskDependency",
   "TaskAttempt",
+  "ExecutionRun",
+  "TaskExecution",
+  "ExecutionLog",
   "ModelDecision",
   "Verification",
   "TokenUsage",
@@ -54,6 +57,10 @@ describe("database initialization", () => {
       "prisma/migrations/20261008230000_model_routing/migration.sql",
       "utf8",
     );
+    const executionMigration = readFileSync(
+      "prisma/migrations/20261008240000_task_execution/migration.sql",
+      "utf8",
+    );
     const models = [...schema.matchAll(/^model (\w+)/gm)].map((match) => match[1]);
     expect(models).toEqual(REQUIRED_MODELS);
     for (const model of REQUIRED_MODELS) {
@@ -63,6 +70,8 @@ describe("database initialization", () => {
         expect(providerMigration).toContain(`CREATE TABLE "${model}"`);
       } else if (model === "ProjectPlan") {
         expect(planMigration).toContain(`CREATE TABLE "${model}"`);
+      } else if (model === "ExecutionRun" || model === "TaskExecution" || model === "ExecutionLog") {
+        expect(executionMigration).toContain(`CREATE TABLE "${model}"`);
       } else {
         expect(migration).toContain(`CREATE TABLE "${model}"`);
       }
@@ -77,6 +86,9 @@ describe("database initialization", () => {
     expect(routingMigration).toContain("ModelDecision_success_probability_range");
     expect(routingMigration).toContain("ALTER TABLE \"ModelDecision\" ALTER COLUMN \"modelId\" DROP NOT NULL");
     expect(schema).toContain("successProbability");
+    expect(executionMigration).toContain("CREATE TYPE \"ExecutionState\"");
+    expect(schema).toContain("ignoredCommand");
+    expect(schema).toContain("enum ExecutionState");
     expect(schema).toContain("enum OptimizationMode");
     expect(schema).toContain("enum TaskType");
     expect(schema).toContain("@@unique([userId, githubRepoId])");

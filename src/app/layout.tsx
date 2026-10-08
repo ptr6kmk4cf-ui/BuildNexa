@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     template: `%s · ${APP_NAME}`,
   },
   description:
-    "Turn a software goal into a task graph, then choose a model by the expected cost of a successful result. Routing does not run the task or spend the budget.",
+    "Turn a software goal into a task graph, choose a model, and run the tasks. Execution stores the model reply. It does not run shell commands or change a repository.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

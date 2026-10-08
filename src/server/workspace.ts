@@ -133,6 +133,11 @@ export type ProjectDetail = {
       modelName: string | null;
       estimatedCostUsd: string | null;
     } | null;
+    execution: {
+      state: string;
+      modelName: string | null;
+      actualCostUsd: string | null;
+    } | null;
   }>;
   budgets: Array<{
     id: string;
@@ -288,6 +293,11 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
               take: 1,
               include: { model: { select: { name: true } } },
             },
+            executions: {
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: 1,
+              include: { model: { select: { name: true } } },
+            },
           },
         },
         budgets: { orderBy: { createdAt: "desc" }, take: 20 },
@@ -343,6 +353,13 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
               outcome: task.decisions[0].outcome,
               modelName: task.decisions[0].model?.name ?? null,
               estimatedCostUsd: task.decisions[0].estimatedCost?.toString() ?? null,
+            }
+          : null,
+        execution: task.executions[0]
+          ? {
+              state: task.executions[0].state,
+              modelName: task.executions[0].model?.name ?? null,
+              actualCostUsd: task.executions[0].actualCost?.toString() ?? null,
             }
           : null,
       })),

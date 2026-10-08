@@ -40,6 +40,7 @@ export function createGeminiProvider(options: ProviderOptions): AIProvider {
       url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.modelId)}:generateContent`,
       timeoutMs,
       headers: { "x-goog-api-key": apiKey },
+      signal: request.signal,
       body: {
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
         contents,

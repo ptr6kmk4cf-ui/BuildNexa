@@ -7,7 +7,10 @@ export async function postJson(options: {
   headers: Record<string, string>;
   body: unknown;
   timeoutMs: number;
+  signal?: AbortSignal;
 }): Promise<{ ok: true; body: unknown } | { ok: false; error: Extract<ProviderFailure, "timeout" | "provider_error" | "unavailable" | "malformed"> }> {
+  const timeout = AbortSignal.timeout(options.timeoutMs);
+  const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
   try {
     const response = await withTimeout(
       options.fetchImpl(options.url, {
@@ -20,7 +23,7 @@ export async function postJson(options: {
           ...options.headers,
         },
         body: JSON.stringify(options.body),
-        signal: AbortSignal.timeout(options.timeoutMs),
+        signal,
       }),
       options.timeoutMs + 1000,
     );

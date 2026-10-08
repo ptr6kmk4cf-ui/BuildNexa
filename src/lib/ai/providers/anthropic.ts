@@ -41,6 +41,7 @@ export function createAnthropicProvider(options: ProviderOptions): AIProvider {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
       },
+      signal: request.signal,
       body: {
         model: model.modelId,
         max_tokens: request.maxOutputTokens,

@@ -61,6 +61,7 @@ export type ExecuteRequest = {
   modelId: string;
   messages: ProviderMessage[];
   maxOutputTokens?: number;
+  signal?: AbortSignal;
 };
 
 export type ProviderFailure =

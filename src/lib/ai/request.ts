@@ -23,5 +23,13 @@ export function validateExecuteRequest(
   if (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 8192) {
     return { ok: false, error: "malformed" };
   }
-  return { ok: true, request: { modelId: request.modelId, messages, maxOutputTokens } };
+  return {
+    ok: true,
+    request: {
+      modelId: request.modelId,
+      messages,
+      maxOutputTokens,
+      ...(request.signal instanceof AbortSignal ? { signal: request.signal } : {}),
+    },
+  };
 }

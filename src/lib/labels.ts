@@ -120,3 +120,22 @@ const routingOutcomeLabel: Record<string, string> = {
 export function labelRoutingOutcome(outcome: string): string {
   return routingOutcomeLabel[outcome] ?? outcome;
 }
+
+const executionStateLabel: Record<string, string> = {
+  QUEUED: "Queued",
+  RUNNING: "Running",
+  COMPLETED: "Completed",
+  FAILED: "Failed",
+  ESCALATED: "Escalated",
+  CANCELLED: "Cancelled",
+  queued: "Queued",
+  running: "Running",
+  completed: "Completed",
+  failed: "Failed",
+  escalated: "Escalated",
+  cancelled: "Cancelled",
+};
+
+export function labelExecutionState(state: string): string {
+  return executionStateLabel[state] ?? state;
+}

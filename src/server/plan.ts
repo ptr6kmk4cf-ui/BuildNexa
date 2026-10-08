@@ -82,6 +82,23 @@ export type PlannedTaskDetail = {
     candidates: DecisionCandidateView[];
     estimateNote: string;
   } | null;
+  execution: {
+    state: string;
+    provider: string | null;
+    modelName: string | null;
+    modelSlug: string | null;
+    attemptCount: number;
+    inputTokens: number;
+    outputTokens: number;
+    durationMs: number;
+    estimatedCostUsd: string | null;
+    actualCostUsd: string | null;
+    result: string | null;
+    error: string | null;
+    escalated: boolean;
+    ignoredCommand: boolean;
+    logs: Array<{ id: string; state: string; attempt: number; message: string }>;
+  } | null;
 };
 
 export async function savePlannedProject(input: {
@@ -250,6 +267,14 @@ export async function getPlannedTask(
           take: 1,
           include: { model: { select: { name: true } } },
         },
+        executions: {
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: 1,
+          include: {
+            model: { select: { name: true } },
+            logs: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 40 },
+          },
+        },
       },
     });
     if (!task) return null;
@@ -285,6 +310,30 @@ export async function getPlannedTask(
             factors: readFactors(task.decisions[0].factors),
             candidates: readCandidateViews(task.decisions[0].candidates),
             estimateNote: ESTIMATE_NOTE,
+          }
+        : null,
+      execution: task.executions[0]
+        ? {
+            state: task.executions[0].state,
+            provider: task.executions[0].provider,
+            modelName: task.executions[0].model?.name ?? null,
+            modelSlug: task.executions[0].modelSlug,
+            attemptCount: task.executions[0].attemptCount,
+            inputTokens: task.executions[0].inputTokens,
+            outputTokens: task.executions[0].outputTokens,
+            durationMs: task.executions[0].durationMs,
+            estimatedCostUsd: task.executions[0].estimatedCost?.toString() ?? null,
+            actualCostUsd: task.executions[0].actualCost?.toString() ?? null,
+            result: task.executions[0].result,
+            error: task.executions[0].errorMessage,
+            escalated: task.executions[0].escalated,
+            ignoredCommand: task.executions[0].ignoredCommand,
+            logs: task.executions[0].logs.map((entry) => ({
+              id: entry.id,
+              state: entry.state,
+              attempt: entry.attempt,
+              message: entry.message,
+            })),
           }
         : null,
     };

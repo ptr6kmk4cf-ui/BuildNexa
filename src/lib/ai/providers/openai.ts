@@ -33,6 +33,7 @@ export function createOpenAIProvider(options: ProviderOptions): AIProvider {
       url: ENDPOINT,
       timeoutMs,
       headers: { authorization: `Bearer ${apiKey}` },
+      signal: request.signal,
       body: {
         model: model.modelId,
         messages: request.messages,

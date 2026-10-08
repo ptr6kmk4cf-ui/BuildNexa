@@ -9,6 +9,7 @@ import { excerpt, formatTimestamp, formatUsd } from "@/lib/format";
 import { labelBudgetPeriod, labelOptimizationMode, labelPullRequestStatus } from "@/lib/labels";
 import { AttachRepositoryForm } from "@/components/github/attach-repository-form";
 import { RouteTasksForm } from "@/components/projects/route-tasks-form";
+import { RunTasksForm } from "@/components/projects/run-tasks-form";
 import { TaskGraph } from "@/components/projects/task-graph";
 import { githubNotice } from "@/lib/github/messages";
 import { listRepositoryOptions } from "@/server/github";
@@ -92,9 +93,11 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
               tasks={project.tasks.map((task) => ({
                 ...task,
                 modelLabel: task.routing?.modelName ?? (task.routing ? "No model" : null),
+                executionLabel: task.execution?.state ?? null,
               }))}
             />
             <RouteTasksForm projectId={project.id} hasDecisions={project.tasks.some((task) => task.routing)} />
+            <RunTasksForm projectId={project.id} />
           </div>
         )}
       </section>
@@ -119,7 +122,7 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
         />
         <RecordCard
           title="Budget"
-          description="The limit recorded with the plan. Nothing has been spent."
+          description="The limit recorded with the plan. A finished model call writes its actual cost on the Costs page."
           empty="No budget is set."
           items={project.budgets.map((budget) => ({
             id: budget.id,
