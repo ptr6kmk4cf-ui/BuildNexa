@@ -11,6 +11,7 @@ import { logger } from "@/lib/logger";
 import { readContextRequests, TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_TYPES } from "@/lib/planner";
 import { executeLimiter, cancelLimiter } from "@/lib/security/limits";
 import { idSchema } from "@/lib/validation";
+import { localCheckDirectory, localModelEnabled, localModelResult, providerKeysForRun } from "@/lib/ai/local-model";
 import { runSandboxModel } from "@/lib/sandbox/agent";
 import { createWorkspaceVerifier } from "@/lib/verification";
 import { readEnabledProviderIds, providerFor } from "@/server/ai";
@@ -149,10 +150,10 @@ export async function executeStoredProject(
     if (!run) return { ok: false, message: "A task run is already in progress." };
     runId = run.id;
     const enabled = await readEnabledProviderIds(prisma);
+    const keys = providerKeysForRun(env);
     const availableProviders = new Set<ProviderId>();
     for (const providerId of PROVIDER_IDS) {
-      const key = env[providerKey(providerId)];
-      if (enabled.has(providerId) && key?.trim()) availableProviders.add(providerId);
+      if (enabled.has(providerId) && keys[providerId]?.trim()) availableProviders.add(providerId);
     }
     const history = await loadHistory(prisma);
     const budgetUsd = project.budgets[0]?.limitAmount.toString() ?? null;
@@ -197,6 +198,10 @@ export async function executeStoredProject(
       signal: AbortSignal;
     }) => {
       if (!isProviderId(call.provider)) return { ok: false as const, error: "unknown_model" as const };
+      if (localModelEnabled(env)) {
+        const reply = localModelResult(call.messages);
+        return { ok: true as const, modelId: call.modelId, text: reply.text, usage: reply.usage };
+      }
       return providerFor(call.provider, { timeoutMs: call.timeoutMs }).execute({
         modelId: call.modelId,
         messages: call.messages,
@@ -204,7 +209,9 @@ export async function executeStoredProject(
         signal: call.signal,
       });
     };
-    const verify = workspace ? (signal: AbortSignal) => workspace.verify(signal) : createWorkspaceVerifier(process.cwd());
+    const verify = workspace
+      ? (signal: AbortSignal) => workspace.verify(signal)
+      : createWorkspaceVerifier(localModelEnabled(env) ? await localCheckDirectory() : process.cwd());
 
     let report: ExecutionReport;
     try {
@@ -596,12 +603,6 @@ function readProbability(value: { toString(): string } | null | undefined): numb
   if (!value) return null;
   const parsed = Number(value.toString());
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function providerKey(provider: ProviderId): "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GEMINI_API_KEY" {
-  if (provider === "openai") return "OPENAI_API_KEY";
-  if (provider === "anthropic") return "ANTHROPIC_API_KEY";
-  return "GEMINI_API_KEY";
 }
 
 function storedCostKind(kind: string): "INITIAL" | "RETRY" | "DEBUG" | "ESCALATION" | "VERIFICATION" {

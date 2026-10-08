@@ -1,6 +1,7 @@
 import "server-only";
 import { io } from "next/cache";
 import type { Prisma } from "@/generated/prisma/client";
+import { providerKeysForRun } from "@/lib/ai/local-model";
 import { listRegistryModels } from "@/lib/ai/registry";
 import { isProviderId, PROVIDER_IDS, providerLabel, type ProviderId } from "@/lib/ai/types";
 import { getPrisma } from "@/lib/db";
@@ -37,11 +38,7 @@ export async function routeStoredProject(
 
     const env = getServerEnv();
     const enabled = await readEnabledProviderIds(prisma);
-    const available = availableProviders(enabled, {
-      openai: env.OPENAI_API_KEY,
-      anthropic: env.ANTHROPIC_API_KEY,
-      gemini: env.GEMINI_API_KEY,
-    });
+    const available = availableProviders(enabled, providerKeysForRun(env));
     const models = listRegistryModels(env.MODEL_PRICING).models;
     const history = await loadHistory(prisma);
     const mode = MODE[project.optimizationMode];
