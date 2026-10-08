@@ -8,6 +8,9 @@ describe("core utilities", () => {
     expect(slugify("AI Project Optimizer")).toBe("ai-project-optimizer");
     expect(slugify("Café Plans")).toBe("cafe-plans");
     expect(slugify("   ")).toBe("project");
+    const clipped = slugify(Array.from({ length: 20 }, () => "ab").join(" "));
+    expect(clipped.endsWith("-")).toBe(false);
+    expect(clipped.length).toBeLessThanOrEqual(48);
   });
 
   it("formats money and timestamps", () => {

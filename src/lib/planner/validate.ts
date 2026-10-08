@@ -38,8 +38,10 @@ export function validatePlan(plan: PlannedWork): { ok: true } | { ok: false; iss
 
   for (const request of plan.contextRequests) {
     if (!ids.has(request.taskId)) issues.push(`Context request ${request.taskId} does not match a task.`);
-    if (request.pathHints.length === 0) issues.push(`Context request ${request.taskId} has no path hints.`);
-    if (request.pathHints.some((hint) => hint.includes("\n"))) {
+    if (request.pathHints.length === 0 || request.pathHints.some((hint) => hint.trim() === "")) {
+      issues.push(`Context request ${request.taskId} has no path hints.`);
+    }
+    if (request.pathHints.some((hint) => hint.includes("\n") || hint.includes("\r"))) {
       issues.push(`Context request ${request.taskId} includes file contents instead of a path.`);
     }
   }
@@ -68,9 +70,11 @@ export function readContextRequests(value: unknown): ContextRequest[] {
 
 function taskIssues(task: PlanTask): string[] {
   const issues: string[] = [];
+  if (!task.id.trim()) issues.push("A task needs an id.");
   if (!TYPES.has(task.type)) issues.push(`${task.id} has an unknown type.`);
   if (!PRIORITIES.has(task.priority)) issues.push(`${task.id} has an unknown priority.`);
   if (!DIFFICULTIES.has(task.difficulty)) issues.push(`${task.id} has an unknown difficulty.`);
+  if (!task.title.trim()) issues.push(`${task.id} needs a title.`);
   if (!task.description.trim()) issues.push(`${task.id} needs a description.`);
   if (!task.expectedOutput.trim()) issues.push(`${task.id} needs an expected output.`);
   if (!task.verificationCriteria.trim()) issues.push(`${task.id} needs verification criteria.`);

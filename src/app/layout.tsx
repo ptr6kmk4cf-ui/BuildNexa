@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     template: `%s · ${APP_NAME}`,
   },
   description:
-    "Record a development objective, then keep the tasks, model choices, and cost that belong to it.",
+    "Turn a software goal into a task graph with a budget and an optimization mode. Planning does not select a model or spend the budget.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

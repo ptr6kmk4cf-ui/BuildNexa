@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { AppNav } from "@/components/layout/app-nav";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { NavLinks } from "@/components/layout/nav-links";
+import { APP_PHASE_LABEL } from "@/lib/constants";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -29,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <AppNav />
           </Suspense>
         </div>
-        <p className="mt-auto px-4 py-4 text-xs text-sidebar-foreground/55">Phase 4, project planner</p>
+        <p className="mt-auto px-4 py-4 text-xs text-sidebar-foreground/55">{APP_PHASE_LABEL}</p>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:hidden">

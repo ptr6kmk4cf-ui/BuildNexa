@@ -6,9 +6,9 @@ import { projectLinkFromRepository } from "@/lib/github/types";
 import { logger } from "@/lib/logger";
 import { createPlan, projectNameFromGoal } from "@/lib/planner";
 import {
-  initialPlanProjectFormState,
   type PlanProjectFieldErrors,
   type PlanProjectFormState,
+  type PlanProjectValues,
 } from "@/lib/project-form";
 import { parseInput, planProjectInputSchema } from "@/lib/validation";
 import { selectCurrentUsersRepository } from "@/server/github";
@@ -28,10 +28,33 @@ function fieldErrorsFromDetails(details: unknown): PlanProjectFieldErrors {
   };
 }
 
+function valuesFromForm(formData: FormData): PlanProjectValues {
+  const text = (key: string) => {
+    const value = formData.get(key);
+    return typeof value === "string" ? value : "";
+  };
+  const mode = text("optimizationMode");
+  return {
+    goal: text("goal"),
+    budget: text("budget"),
+    optimizationMode: mode === "savings" || mode === "quality" || mode === "balanced" ? mode : "balanced",
+    repositoryId: text("repositoryId"),
+  };
+}
+
+function planError(
+  message: string | null,
+  fieldErrors: PlanProjectFieldErrors,
+  values: PlanProjectValues,
+): PlanProjectFormState {
+  return { status: "error", message, fieldErrors, values };
+}
+
 export async function planProject(
   _previous: PlanProjectFormState,
   formData: FormData,
 ): Promise<PlanProjectFormState> {
+  const values = valuesFromForm(formData);
   try {
     const input = parseInput(planProjectInputSchema, {
       goal: formData.get("goal"),
@@ -41,7 +64,7 @@ export async function planProject(
     });
     const link = input.repositoryId ? await selectCurrentUsersRepository(input.repositoryId) : null;
     if (link && !link.ok) {
-      return { ...initialPlanProjectFormState, status: "error", message: link.message };
+      return planError(link.message, {}, values);
     }
     const planned = createPlan({
       goal: input.goal,
@@ -57,11 +80,7 @@ export async function planProject(
         : null,
     });
     if (!planned.ok) {
-      return {
-        status: "error",
-        message: null,
-        fieldErrors: { goal: [planned.message] },
-      };
+      return planError(null, { goal: [planned.message] }, values);
     }
     const saved = await savePlannedProject({
       name: projectNameFromGoal(input.goal),
@@ -73,18 +92,14 @@ export async function planProject(
         ? { link: { userId: link.userId, repository: projectLinkFromRepository(link.repository) } }
         : {}),
     });
-    if (!saved.ok) return { ...initialPlanProjectFormState, status: "error", message: saved.message };
+    if (!saved.ok) return planError(saved.message, {}, values);
     redirect(`/projects/${saved.id}`);
   } catch (error) {
     unstable_rethrow(error);
     if (error instanceof InputValidationError) {
-      return {
-        status: "error",
-        message: "Check the highlighted fields.",
-        fieldErrors: fieldErrorsFromDetails(error.details),
-      };
+      return planError("Check the highlighted fields.", fieldErrorsFromDetails(error.details), values);
     }
     logger.error("Could not plan project", { error });
-    return { ...initialPlanProjectFormState, status: "error", message: "The plan could not be saved." };
+    return planError("The plan could not be saved.", {}, values);
   }
 }

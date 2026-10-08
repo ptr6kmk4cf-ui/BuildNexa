@@ -40,6 +40,11 @@ async function ProjectList() {
         <EmptyState
           title="No projects yet"
           description="Start with a goal, a budget, and an optimization mode. The planner writes the task graph and does not call a model."
+          action={
+            <Link href="/projects/new" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
+              Plan a project
+            </Link>
+          }
         />
       ) : null}
       {result.status === "ready" && result.data.length > 0 ? (

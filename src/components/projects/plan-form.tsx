@@ -27,9 +27,19 @@ export function PlanForm({
   const repositoryDefault = repositories.some((repository) => repository.id === defaultRepositoryId)
     ? defaultRepositoryId
     : "";
+  const restore = state.status === "error";
+  const repositoryValue = restore ? state.values.repositoryId : repositoryDefault;
 
   return (
-    <form action={formAction} className="grid gap-5">
+    <form
+      action={formAction}
+      className="grid gap-5"
+      key={
+        restore
+          ? `${state.values.goal}\0${state.values.budget}\0${state.values.optimizationMode}\0${state.values.repositoryId}\0${state.message ?? ""}`
+          : "new"
+      }
+    >
       <div className="grid gap-2">
         <Label htmlFor="plan-goal">Goal</Label>
         <Textarea
@@ -40,6 +50,7 @@ export function PlanForm({
           maxLength={4000}
           rows={6}
           placeholder="Add Google and Apple authentication, update the database, create the API endpoints, build the login interface, add tests, and prepare a pull request."
+          defaultValue={state.values.goal}
           aria-invalid={Boolean(state.fieldErrors.goal)}
           aria-describedby={state.fieldErrors.goal ? "plan-goal-error plan-goal-hint" : "plan-goal-hint"}
         />
@@ -61,6 +72,7 @@ export function PlanForm({
             inputMode="decimal"
             required
             placeholder="25.00"
+            defaultValue={state.values.budget}
             aria-invalid={Boolean(state.fieldErrors.budget)}
             aria-describedby={state.fieldErrors.budget ? "plan-budget-error plan-budget-hint" : "plan-budget-hint"}
           />
@@ -78,7 +90,7 @@ export function PlanForm({
           <NativeSelect
             id="plan-mode"
             name="optimizationMode"
-            defaultValue="balanced"
+            defaultValue={state.values.optimizationMode || "balanced"}
             aria-invalid={Boolean(state.fieldErrors.optimizationMode)}
             aria-describedby={state.fieldErrors.optimizationMode ? "plan-mode-error plan-mode-hint" : "plan-mode-hint"}
           >
@@ -100,10 +112,10 @@ export function PlanForm({
         <div className="grid gap-2">
           <Label htmlFor="plan-repository">Repository</Label>
           <NativeSelect
-            key={repositoryDefault || "none"}
+            key={repositoryValue || "none"}
             id="plan-repository"
             name="repositoryId"
-            defaultValue={repositoryDefault}
+            defaultValue={repositoryValue}
             aria-invalid={Boolean(state.fieldErrors.repositoryId)}
             aria-describedby={
               state.fieldErrors.repositoryId ? "plan-repository-error plan-repository-hint" : "plan-repository-hint"

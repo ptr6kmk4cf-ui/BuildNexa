@@ -11,8 +11,25 @@ import type {
   TaskDifficulty,
 } from "@/lib/planner/types";
 
-const SOFTWARE =
-  /\b(api|endpoint|endpoints|database|schema|migration|frontend|backend|interface|component|authentication|oauth|login|tests?|bug|repository|page|screen|ui|readme|app|application|website|server|button|form|route|pull request|refactor|debug|homepage)\b/i;
+// Strong signals are enough on their own. Clear signals need a change verb.
+// Ambiguous nouns (page, server, bug, app, …) need a verb and a second software signal,
+// so "tip the server" or "change the bus route" is not planned.
+const STRONG =
+  /\b(api|apis|endpoint|endpoints|database|schema|migration|migrations|frontend|backend|authentication|oauth|sso|repository|readme|refactor|refactoring|debug|debugging|homepage|component|components|pull request|merge request|website|sql|prisma|handlers?|middleware|ui|sign-in|signin|sign-up|signup|password|credential)\b/i;
+const CLEAR = /\b(login|tests?|testing|specs?|interface|dashboard|settings)\b/i;
+const ACTION =
+  /\b(add|adding|fix|fixing|update|updating|create|creating|build|building|implement|implementing|remove|removing|change|changing|write|writing|replace|wire|integrate|support)\b/i;
+const AMBIGUOUS = [
+  /\bapps?\b/i,
+  /\bapplications?\b/i,
+  /\bpages?\b/i,
+  /\bscreens?\b/i,
+  /\bbuttons?\b/i,
+  /\bforms?\b/i,
+  /\broutes?\b/i,
+  /\bservers?\b/i,
+  /\bbugs?\b/i,
+];
 
 const INVALID_MESSAGE = "Describe a software change, such as the feature, bug, or tests to add.";
 
@@ -30,7 +47,11 @@ type Draft = Omit<PlanTask, "dependencies">;
 
 export function projectNameFromGoal(goal: string): string {
   const normalized = goal.trim().replace(/\s+/g, " ");
-  const sentence = normalized.split(/[.\n]/)[0]?.trim() || normalized;
+  const sentences = normalized
+    .split(/[.\n]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 12);
+  const sentence = sentences[0] || normalized;
   const clause = sentence.split(",")[0]?.trim() || sentence;
   const source = clause.length >= 12 && clause.length <= 80 ? clause : sentence;
   if (source.length <= 80) return source.length >= 2 ? source : "Planned project";
@@ -70,7 +91,11 @@ export function createPlan(request: PlanRequest): { ok: true; plan: PlannedWork 
 
 function isSoftwareObjective(goal: string): boolean {
   const words = goal.split(" ").filter(Boolean);
-  return goal.length >= 12 && words.length >= 3 && SOFTWARE.test(goal);
+  if (goal.length < 12 || words.length < 3) return false;
+  if (STRONG.test(goal)) return true;
+  if (!ACTION.test(goal)) return false;
+  if (CLEAR.test(goal)) return true;
+  return AMBIGUOUS.filter((pattern) => pattern.test(goal)).length >= 2;
 }
 
 function detectAreas(goal: string): Set<Area> {

@@ -125,6 +125,38 @@ describe("project planner", () => {
     expect(createPlan({ goal: "Change my zip code today", optimizationMode: "balanced", budgetUsd: "5" }).ok).toBe(
       false,
     );
+    expect(createPlan({ goal: "Tip the server after dinner", optimizationMode: "balanced", budgetUsd: "5" }).ok).toBe(
+      false,
+    );
+    expect(createPlan({ goal: "Sew a button onto this coat", optimizationMode: "balanced", budgetUsd: "5" }).ok).toBe(
+      false,
+    );
+    expect(createPlan({ goal: "There is a bug in the garden", optimizationMode: "balanced", budgetUsd: "5" }).ok).toBe(
+      false,
+    );
+    expect(createPlan({ goal: "Change the bus route today", optimizationMode: "balanced", budgetUsd: "5" }).ok).toBe(
+      false,
+    );
+    expect(createPlan({ goal: "Download the weather app today", optimizationMode: "balanced", budgetUsd: "5" }).ok).toBe(
+      false,
+    );
+  });
+
+  it("names the project from the first real clause, skipping a short lead-in", () => {
+    expect(projectNameFromGoal("OK. Add authentication to the application now")).toBe(
+      "Add authentication to the application now",
+    );
+  });
+
+  it("plans a settings page and rejects a page mention with no software signal", () => {
+    const planned = createPlan({
+      goal: "Add a settings page to the app",
+      optimizationMode: "balanced",
+      budgetUsd: "10",
+    });
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    expect(planned.plan.tasks.map((entry) => entry.id)).toContain("frontend");
   });
 
   it("keeps a security review when authentication is requested alongside a login label", () => {
@@ -184,6 +216,7 @@ describe("project planner", () => {
       tasks: [
         sampleTask({
           id: "orphan",
+          title: " ",
           description: " ",
           type: "not-a-type" as PlanTask["type"],
           dependencies: ["orphan", "ghost", "ghost"],
@@ -198,6 +231,7 @@ describe("project planner", () => {
       expect(invalid.issues).toEqual(
         expect.arrayContaining([
           "orphan has an unknown type.",
+          "orphan needs a title.",
           "orphan needs a description.",
           "orphan needs an expected output.",
           "orphan needs verification criteria.",

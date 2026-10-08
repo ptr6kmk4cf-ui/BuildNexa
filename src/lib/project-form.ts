@@ -24,14 +24,28 @@ export type PlanProjectFieldErrors = {
   repositoryId?: string[];
 };
 
+export type PlanProjectValues = {
+  goal: string;
+  budget: string;
+  optimizationMode: string;
+  repositoryId: string;
+};
+
 export type PlanProjectFormState = {
   status: "idle" | "error";
   message: string | null;
   fieldErrors: PlanProjectFieldErrors;
+  values: PlanProjectValues;
 };
 
 export const initialPlanProjectFormState: PlanProjectFormState = {
   status: "idle",
   message: null,
   fieldErrors: {},
+  values: {
+    goal: "",
+    budget: "",
+    optimizationMode: "balanced",
+    repositoryId: "",
+  },
 };
