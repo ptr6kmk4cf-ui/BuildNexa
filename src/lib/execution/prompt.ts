@@ -15,6 +15,7 @@ export function looksLikeHostCommand(text: string): boolean {
 export function buildTaskMessages(
   task: ExecutionTask,
   dependencyResults: ReadonlyArray<{ title: string; result: string }>,
+  feedback?: string,
 ): ProviderMessage[] {
   const lines = [
     `Task: ${clip(task.title, 500)}`,
@@ -34,6 +35,7 @@ export function buildTaskMessages(
       lines.push(`- ${dependency.title}: ${clip(dependency.result, EXECUTION_CONFIG.maxDependencyChars)}`);
     }
   }
+  if (feedback?.trim()) lines.push(`Verification failure to address:\n${clip(feedback, 2_000)}`);
 
   const content = cap(lines.join("\n"), EXECUTION_CONFIG.maxPromptChars);
   return [

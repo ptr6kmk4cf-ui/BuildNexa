@@ -1,5 +1,6 @@
-import type { ProviderId, TokenCounts } from "@/lib/ai/types";
-import { findCycle } from "@/lib/planner";
+import type { ProviderId, RegistryModel, TokenCounts } from "@/lib/ai/types";
+import { findCycle, type OptimizationMode } from "@/lib/planner";
+import { addMoney } from "@/lib/routing/money";
 import { EXECUTION_CONFIG } from "@/lib/execution/config";
 import { createControlledEnvironment, type ExecutionEnvironment, type ModelCaller } from "@/lib/execution/environment";
 import { buildTaskMessages, looksLikeHostCommand } from "@/lib/execution/prompt";
@@ -13,6 +14,12 @@ import type {
   ExecutionTask,
   TaskExecutionResult,
 } from "@/lib/execution/types";
+import { VERIFICATION_CONFIG } from "@/lib/verification/config";
+import { decideEscalation } from "@/lib/verification/decide";
+import { unresolvedReport } from "@/lib/verification/interpret";
+import { routeTask } from "@/lib/routing/route";
+import type { HistorySample } from "@/lib/routing/types";
+import type { EscalationModel, TaskVerification } from "@/lib/verification/types";
 
 const RETRYABLE = new Set(["timeout", "provider_error", "unavailable", "malformed"]);
 
@@ -25,6 +32,13 @@ export type RunExecutionInput = {
   timeoutMs?: number;
   concurrency?: number;
   price?: (provider: ProviderId, modelId: string, usage: TokenCounts) => string | null;
+  verify?: () => Promise<TaskVerification>;
+  budgetUsd?: string | null;
+  mode?: OptimizationMode;
+  models?: readonly RegistryModel[];
+  availableProviders?: ReadonlySet<ProviderId>;
+  history?: readonly HistorySample[];
+  maxVerificationAttempts?: number;
 };
 
 type MutableResult = TaskExecutionResult & { title: string };
@@ -83,6 +97,13 @@ export async function runExecution(input: RunExecutionInput): Promise<ExecutionR
             maxAttempts,
             timeoutMs,
             price: input.price,
+            verify: input.verify,
+            budgetUsd: input.budgetUsd,
+            mode: input.mode,
+            models: input.models,
+            availableProviders: input.availableProviders,
+            history: input.history,
+            maxVerificationAttempts: input.maxVerificationAttempts,
           })
             .catch(() => {
               const record = records.get(task.id);
@@ -177,6 +198,13 @@ async function executeTask(input: {
   maxAttempts: number;
   timeoutMs: number;
   price?: RunExecutionInput["price"];
+  verify?: RunExecutionInput["verify"];
+  budgetUsd?: string | null;
+  mode?: OptimizationMode;
+  models?: readonly RegistryModel[];
+  availableProviders?: ReadonlySet<ProviderId>;
+  history?: readonly HistorySample[];
+  maxVerificationAttempts?: number;
 }): Promise<void> {
   const record = input.records.get(input.task.id);
   if (!record || record.state !== "queued") return;
@@ -185,6 +213,10 @@ async function executeTask(input: {
 
   if (!input.task.model) {
     finish(record, input.logs, "failed", 0, "No model was selected for this task.");
+    return;
+  }
+  if (input.verify) {
+    await executeVerified(input, record, input.task.model);
     return;
   }
 
@@ -220,6 +252,102 @@ async function executeTask(input: {
   finish(record, input.logs, "failed", record.attemptCount, record.error ?? "The model did not return a result.");
 }
 
+async function executeVerified(
+  input: {
+    task: ExecutionTask;
+    records: Map<string, MutableResult>;
+    logs: ExecutionLogEntry[];
+    costs: ExecutionCost[];
+    environment: ExecutionEnvironment;
+    signal: AbortSignal;
+    maxAttempts: number;
+    timeoutMs: number;
+    price?: RunExecutionInput["price"];
+    verify?: RunExecutionInput["verify"];
+    budgetUsd?: string | null;
+    mode?: OptimizationMode;
+    models?: readonly RegistryModel[];
+    availableProviders?: ReadonlySet<ProviderId>;
+    history?: readonly HistorySample[];
+    maxVerificationAttempts?: number;
+  },
+  record: MutableResult,
+  initialModel: ExecutionModel,
+): Promise<void> {
+  if (!input.verify) return;
+  const maxCycles = clampInt(input.maxVerificationAttempts ?? VERIFICATION_CONFIG.maxAttempts, 1, 5);
+  let model = initialModel;
+  let estimate: EscalationModel = {
+    provider: model.provider,
+    modelId: model.modelId,
+    displayName: model.displayName,
+    estimatedCostUsd: input.task.estimatedCostUsd,
+    successProbability: input.task.successProbability ?? null,
+  };
+  let sameModelAttempts = 0;
+  let feedback = "";
+  for (let cycle = 0; cycle < maxCycles; cycle += 1) {
+    sameModelAttempts += 1;
+    const switched = model.provider !== initialModel.provider || model.modelId !== initialModel.modelId;
+    const reply = await attemptModel({
+      ...input,
+      record,
+      model,
+      limit: input.maxAttempts,
+      escalated: switched,
+      feedback,
+      holdCompletion: true,
+    });
+    if (reply === "done") return;
+    if (reply === "failed") {
+      finish(record, input.logs, "failed", record.attemptCount, record.error ?? "The model did not return a result.");
+      return;
+    }
+    const verification = await input.verify();
+    const latest = record.attempts.at(-1);
+    verification.costUsd = latest?.actualCostUsd ?? null;
+    record.verifications.push(verification);
+    pushLog(input.logs, input.task.id, "running", record.attemptCount, `Verification ${verification.outcome}. ${verification.summary}`);
+    if (verification.outcome === "pass") {
+      finish(
+        record,
+        input.logs,
+        "completed",
+        record.attemptCount,
+        "Verification passed. The model reply was stored and was not written into the project.",
+      );
+      return;
+    }
+    const decision = decideForTask(input, record, verification, cycle + 1, sameModelAttempts, estimate, maxCycles);
+    if (decision.action === "stop" || cycle === maxCycles - 1) {
+      const reason = decision.action === "stop" ? decision.reason : `the attempt limit of ${maxCycles} was reached.`;
+      record.verificationStopReason = reason;
+      finish(record, input.logs, "failed", record.attemptCount, unresolvedReport({
+        verification,
+        attempts: cycle + 1,
+        costUsd: record.actualCostUsd,
+        reason,
+      }));
+      return;
+    }
+    feedback = `${verification.summary}${verification.errors ? `\n${verification.errors}` : ""}`;
+    if (decision.action === "retry") {
+      pushLog(input.logs, input.task.id, "running", record.attemptCount, decision.reason);
+      continue;
+    }
+    model = {
+      provider: decision.model.provider,
+      modelId: decision.model.modelId,
+      displayName: decision.model.displayName,
+    };
+    estimate = decision.model;
+    sameModelAttempts = 0;
+    record.state = "escalated";
+    record.escalated = true;
+    pushLog(input.logs, input.task.id, "escalated", record.attemptCount, decision.reason);
+  }
+}
+
 async function attemptModel(input: {
   task: ExecutionTask;
   records: Map<string, MutableResult>;
@@ -233,7 +361,9 @@ async function attemptModel(input: {
   timeoutMs: number;
   escalated: boolean;
   price?: RunExecutionInput["price"];
-}): Promise<"done" | "failed"> {
+  feedback?: string;
+  holdCompletion?: boolean;
+}): Promise<"done" | "failed" | "reply"> {
   for (let index = 0; index < input.limit; index += 1) {
     if (input.signal.aborted) {
       finish(input.record, input.logs, "cancelled", input.record.attemptCount, "Cancelled while running.");
@@ -249,7 +379,7 @@ async function attemptModel(input: {
     const result = await input.environment.run({
       provider: input.model.provider,
       modelId: input.model.modelId,
-      messages: buildTaskMessages(input.task, dependencyResults),
+      messages: buildTaskMessages(input.task, dependencyResults, input.feedback),
       timeoutMs: input.timeoutMs,
       signal: input.signal,
     });
@@ -266,7 +396,7 @@ async function attemptModel(input: {
       input.record.inputTokens += result.usage.inputTokens;
       input.record.outputTokens += result.usage.outputTokens;
       const actual = quote(input.price, input.model.provider, input.model.modelId, result.usage);
-      input.record.actualCostUsd = actual;
+      input.record.actualCostUsd = combineCost(input.record.actualCostUsd, actual);
       recordAttempt(input.record, input.model, {
         status: "succeeded",
         error: null,
@@ -286,6 +416,7 @@ async function attemptModel(input: {
           modelId: input.model.modelId,
         });
       }
+      if (input.holdCompletion) return "reply";
       const note = input.record.ignoredCommand
         ? "Stored the model reply. It looked like a shell command and was not run."
         : "Stored the model reply.";
@@ -361,6 +492,8 @@ function publicResult(record: MutableResult): TaskExecutionResult {
     ignoredCommand: record.ignoredCommand,
     skipped: record.skipped,
     attempts: record.attempts.map((entry) => ({ ...entry })),
+    verifications: record.verifications.map((entry) => ({ ...entry, checks: entry.checks.map((check) => ({ ...check })) })),
+    verificationStopReason: record.verificationStopReason,
   };
 }
 
@@ -384,6 +517,8 @@ function blankResult(task: ExecutionTask): MutableResult {
     ignoredCommand: false,
     skipped: false,
     attempts: [],
+    verifications: [],
+    verificationStopReason: null,
   };
 }
 
@@ -403,6 +538,71 @@ function recordAttempt(
     durationMs: attempt.durationMs,
     actualCostUsd: attempt.actualCostUsd,
   });
+}
+
+function decideForTask(
+  input: {
+    task: ExecutionTask;
+    budgetUsd?: string | null;
+    mode?: OptimizationMode;
+    models?: readonly RegistryModel[];
+    availableProviders?: ReadonlySet<ProviderId>;
+    history?: readonly HistorySample[];
+  },
+  record: MutableResult,
+  verification: TaskVerification,
+  attempt: number,
+  sameModelAttempts: number,
+  estimate: EscalationModel,
+  maxAttempts: number,
+) {
+  const type = input.task.type;
+  const difficulty = input.task.difficulty;
+  const priority = input.task.priority;
+  const routed = type && difficulty && priority && input.mode && input.models && input.availableProviders
+    ? routeTask({
+        task: {
+          id: input.task.id,
+          title: input.task.title,
+          type,
+          difficulty,
+          priority,
+          complexity: input.task.complexity ?? 1,
+        },
+        mode: input.mode,
+        models: input.models,
+        availableProviders: input.availableProviders,
+        history: input.history ?? [],
+      })
+    : {
+        taskId: input.task.id,
+        mode: input.mode ?? "balanced",
+        outcome: "insufficient_capability" as const,
+        selected: null,
+        estimatedCostUsd: null,
+        successProbability: null,
+        factors: [],
+        candidates: [],
+        estimateNote: "",
+      };
+  if (verification.outcome === "pass") return { action: "stop" as const, reason: "verification passed." };
+  return decideEscalation({
+    outcome: verification.outcome,
+    attempt,
+    maxAttempts,
+    sameModelAttempts,
+    maxSameModelRetries: VERIFICATION_CONFIG.maxSameModelRetries,
+    spentUsd: record.actualCostUsd ?? "0",
+    budgetUsd: input.budgetUsd ?? null,
+    current: estimate,
+    routed,
+  });
+}
+
+function combineCost(current: string | null, next: string | null): string | null {
+  if (!next) return current;
+  if (!current) return next;
+  return addMoney([current, next]) ?? next;
 }
 
 function quote(

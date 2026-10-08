@@ -1,4 +1,6 @@
 import type { ProviderFailure, ProviderId, TokenCounts } from "@/lib/ai/types";
+import type { TaskDifficulty, TaskPriority, TaskType } from "@/lib/planner/types";
+import type { TaskVerification } from "@/lib/verification/types";
 
 export const EXECUTION_STATES = ["queued", "running", "completed", "failed", "escalated", "cancelled"] as const;
 
@@ -30,6 +32,11 @@ export type ExecutionTask = {
   context: ExecutionContext | null;
   alreadyCompleted?: boolean;
   priorResult?: string | null;
+  type?: TaskType;
+  difficulty?: TaskDifficulty;
+  priority?: TaskPriority;
+  complexity?: number;
+  successProbability?: number | null;
 };
 
 export type ExecutionLogEntry = {
@@ -69,6 +76,8 @@ export type TaskExecutionResult = {
   ignoredCommand: boolean;
   skipped: boolean;
   attempts: ExecutionAttempt[];
+  verifications: TaskVerification[];
+  verificationStopReason: string | null;
 };
 
 export type ExecutionCost = {

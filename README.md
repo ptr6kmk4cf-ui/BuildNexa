@@ -1,6 +1,6 @@
 # AI Project Optimizer
 
-Phase 6 runs the task plan with the model chosen by routing. Tasks start only after their dependencies complete, and independent tasks can run at the same time. A later run leaves tasks that already completed and continues the rest. Each run stores the provider, model, token counts, duration, estimated cost, actual cost, reply, and errors. A reply that looks like a shell command is stored and not executed. The repository is not modified and no pull request is opened.
+Phase 8 verifies a model reply before calling the task complete. After the selected model answers, the workspace runs the JavaScript or TypeScript project's own test, lint, typecheck, and build commands. The result is pass, fail, partial, or unknown. The first failure retries the same model with the check output in the prompt. A later failure asks routing for a stronger model only when the expected cost and success estimate justify it. If routing has no different model and another try still fits the budget, the same model may run again until the attempt limit. An unresolved task reports what failed, which attempts ran, the cost incurred, and why it stopped. The model reply is stored and is not written into the repository.
 
 ## Architecture
 
@@ -15,6 +15,7 @@ src/server             request-time queries, plans, GitHub, and provider setting
 src/lib/planner        task graph, dependency checks, and context-request hints
 src/lib/routing        expected-cost model choice, history blend, and decision factors
 src/lib/execution      dependency queue, retries, timeouts, cancellation, and the controlled model environment
+src/lib/verification   project checks, pass/fail interpretation, and escalation decisions
 src/lib/ai             provider interface, adapters, registry, and cost calculation
 src/lib                env, validation, errors, logging, encryption, GitHub API client
 prisma                 schema and migrations
@@ -29,7 +30,7 @@ prisma                 schema and migrations
 | Logging | JSON logs. Connection strings and secret-shaped fields are redacted. |
 | UI | Shared shell with dashboard, projects, models, costs, activity, and settings. Data regions show loading, empty, unconfigured, and error states. |
 
-The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `ProjectPlan`, `Task`, `TaskDependency`, `TaskAttempt`, `ModelDecision`, `Verification`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, `AuditLog`, `GithubAccount`, `ConnectedRepository`, and `ProviderPreference`.
+The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `ProjectPlan`, `Task`, `TaskDependency`, `TaskAttempt`, `ExecutionRun`, `TaskExecution`, `ExecutionLog`, `ModelDecision`, `Verification`, `VerificationCheck`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, `AuditLog`, `GithubAccount`, `ConnectedRepository`, and `ProviderPreference`.
 
 `createPlan` turns a software objective into ordered tasks. Each task has an id, description, type, priority, difficulty, dependencies, expected output, verification criteria, and a complexity from 1 to 5. Savings omits the extra architecture and documentation steps. Balanced follows analysis, architecture, implementation, tests, security when the goal needs it, and final verification. Quality adds planning and documentation. A dependency that would cycle is rejected. Context requests store repository identity and path hints for a later retrieval step. They do not contain file contents.
 
@@ -37,7 +38,9 @@ The new-project screen collects the goal, a USD budget, and Savings, Balanced, o
 
 `AIProvider` is the only model-call surface. `OpenAIProvider`, `AnthropicProvider`, and `GeminiProvider` adapt vendor HTTP responses into that surface. `routeTask` does not call `execute`. `runExecution` does, through a controlled environment that has no shell and no repository writes.
 
-`runExecution` queues every task, starts work whose dependencies are complete, and keeps a small concurrency limit. A provider error is retried. A call that misses its deadline fails that attempt. Cancellation stops the running call and leaves later tasks unstarted. After the selected model exhausts its attempts, one escalation model from the routing decision can be tried. Success writes token counts and, when a price is configured, an actual USD cost. The project page can start or cancel a run. The task page shows the stored reply and the execution log.
+`runExecution` queues every task, starts work whose dependencies are complete, and keeps a small concurrency limit. A provider error is retried. A call that misses its deadline fails that attempt. Cancellation stops the running call and leaves later tasks unstarted. When verification is attached, a stored reply is not success until the checks pass. The first failed check retries the same model with that failure in the prompt. A later failure asks `routeTask` for a different model and continues only when the expected cost and success estimate justify it. With no different model, the same model can be tried again until `VERIFICATION_CONFIG.maxAttempts`. The task page shows each check command, output, exit code, duration, and errors.
+
+`runExecution` without a verifier still completes when the model returns a reply. That path remains for provider-only retries. The project page passes a verifier, so a run there does not report success from the reply alone.
 
 `routeTask` scores each available model for one task. Expected cost is the first run, plus estimated retries, escalation, context, and verification. Savings keeps a quality floor and then prefers the lower expected cost. Balanced does the same and penalizes very slow models. Quality raises the floor and, on important tasks, can pay more for a higher success estimate. Success probabilities are estimates from the configured 0–5 ratings, blended with `TaskAttempt` history when attempts exist. They are not a measured accuracy. A provider that is disabled or has no API key is unavailable. A model below the capability floor, without required tool support, or with no price is not selected. The decision stores the task, candidates, selected model, estimated cost, success estimate, concise factors, and optimization mode. No chain-of-thought is stored.
 

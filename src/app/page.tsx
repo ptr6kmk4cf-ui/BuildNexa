@@ -20,7 +20,7 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Dashboard"
-        description="Turn a software goal into a task graph, choose a model, and run the tasks. Execution stores the model reply. It does not run shell commands, push code, or open a pull request."
+        description="Turn a software goal into a task graph, choose a model, and verify the result. A model reply is stored. Project checks decide whether the task passed, and the reply is not applied to the repository."
       />
       <Suspense fallback={<PanelSkeleton cards={4} />}>
         <DashboardPanel />

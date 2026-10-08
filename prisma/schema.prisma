@@ -1,7 +1,8 @@
 // AI Project Optimizer data model.
-// Phase 6 records a task execution. The model reply is stored.
+// Phase 8 verifies a finished model reply with the project's own checks.
+// A passing reply is not stored as success unless those checks pass.
 // API keys are not stored. GitHub access tokens remain ciphertext only.
-// Execution does not run shell commands or modify a repository.
+// Verification runs only allowlisted project checks. It does not apply the reply to the files.
 
 generator client {
   provider = "prisma-client"
@@ -50,6 +51,20 @@ enum VerificationStatus {
   PASSED
   FAILED
   SKIPPED
+}
+
+enum VerificationOutcome {
+  PASS
+  FAIL
+  PARTIAL
+  UNKNOWN
+}
+
+enum VerificationCheckKind {
+  TEST
+  LINT
+  TYPECHECK
+  BUILD
 }
 
 enum PullRequestStatus {
@@ -262,6 +277,7 @@ model Task {
   attempts      TaskAttempt[]
   decisions     ModelDecision[]
   verifications Verification[]
+  verificationChecks VerificationCheck[]
   executions    TaskExecution[]
 
   @@unique([planId, planKey])
@@ -392,19 +408,49 @@ model ModelDecision {
 }
 
 model Verification {
-  id            String             @id @default(cuid())
+  id            String              @id @default(cuid())
   taskId        String
   taskAttemptId String?
-  status        VerificationStatus @default(PENDING)
-  notes         String?            @db.Text
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  status        VerificationStatus  @default(PENDING)
+  outcome       VerificationOutcome?
+  notes         String?             @db.Text
+  stopReason    String?             @db.Text
+  command       String?             @db.Text
+  output        String?             @db.Text
+  exitCode      Int?
+  durationMs    Int?
+  errors        String?             @db.Text
+  costUsd       Decimal?            @db.Decimal(14, 6)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
-  task    Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  attempt TaskAttempt? @relation(fields: [taskAttemptId], references: [id], onDelete: SetNull)
+  task    Task                @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  attempt TaskAttempt?        @relation(fields: [taskAttemptId], references: [id], onDelete: SetNull)
+  checks  VerificationCheck[]
 
   @@index([taskId, status])
   @@index([taskAttemptId])
+  @@index([taskId, createdAt])
+}
+
+model VerificationCheck {
+  id             String                @id @default(cuid())
+  verificationId String
+  taskId         String
+  kind           VerificationCheckKind
+  command        String
+  output         String                @db.Text
+  exitCode       Int?
+  durationMs     Int
+  errors         String?               @db.Text
+  outcome        VerificationOutcome
+  createdAt      DateTime              @default(now())
+
+  verification Verification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+  task         Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId, createdAt])
+  @@index([taskId, createdAt])
 }
 
 model TokenUsage {

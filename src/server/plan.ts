@@ -99,6 +99,26 @@ export type PlannedTaskDetail = {
     ignoredCommand: boolean;
     logs: Array<{ id: string; state: string; attempt: number; message: string }>;
   } | null;
+  verifications: Array<{
+    id: string;
+    outcome: string | null;
+    status: string;
+    summary: string | null;
+    stopReason: string | null;
+    errors: string | null;
+    durationMs: number | null;
+    costUsd: string | null;
+    checks: Array<{
+      id: string;
+      kind: string;
+      command: string;
+      output: string;
+      exitCode: number | null;
+      durationMs: number;
+      errors: string | null;
+      outcome: string;
+    }>;
+  }>;
 };
 
 export async function savePlannedProject(input: {
@@ -275,6 +295,11 @@ export async function getPlannedTask(
             logs: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 40 },
           },
         },
+        verifications: {
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: 5,
+          include: { checks: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+        },
       },
     });
     if (!task) return null;
@@ -336,6 +361,26 @@ export async function getPlannedTask(
             })),
           }
         : null,
+      verifications: [...task.verifications].reverse().map((verification) => ({
+        id: verification.id,
+        outcome: verification.outcome,
+        status: verification.status,
+        summary: verification.notes,
+        stopReason: verification.stopReason,
+        errors: verification.errors,
+        durationMs: verification.durationMs,
+        costUsd: verification.costUsd?.toString() ?? null,
+        checks: verification.checks.map((check) => ({
+          id: check.id,
+          kind: check.kind,
+          command: check.command,
+          output: check.output,
+          exitCode: check.exitCode,
+          durationMs: check.durationMs,
+          errors: check.errors,
+          outcome: check.outcome,
+        })),
+      })),
     };
   });
 }

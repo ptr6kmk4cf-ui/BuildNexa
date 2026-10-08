@@ -139,3 +139,18 @@ const executionStateLabel: Record<string, string> = {
 export function labelExecutionState(state: string): string {
   return executionStateLabel[state] ?? state;
 }
+
+const verificationOutcomeLabel: Record<string, string> = {
+  PASS: "Pass",
+  FAIL: "Fail",
+  PARTIAL: "Partial",
+  UNKNOWN: "Unknown",
+  pass: "Pass",
+  fail: "Fail",
+  partial: "Partial",
+  unknown: "Unknown",
+};
+
+export function labelVerificationOutcome(outcome: string): string {
+  return verificationOutcomeLabel[outcome] ?? outcome;
+}

@@ -3,14 +3,18 @@ import { io } from "next/cache";
 import type { Prisma } from "@/generated/prisma/client";
 import { calculateCost } from "@/lib/ai/cost";
 import { listRegistryModels } from "@/lib/ai/registry";
-import { isProviderId, providerLabel, type ProviderId } from "@/lib/ai/types";
+import { isProviderId, PROVIDER_IDS, providerLabel, type ProviderId } from "@/lib/ai/types";
 import { getPrisma } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
 import { EXECUTION_CONFIG, runExecution, type ExecutionReport, type ExecutionTask, type TaskExecutionResult } from "@/lib/execution";
 import { logger } from "@/lib/logger";
-import { readContextRequests } from "@/lib/planner";
+import { readContextRequests, TASK_DIFFICULTIES, TASK_PRIORITIES, TASK_TYPES } from "@/lib/planner";
 import { idSchema } from "@/lib/validation";
-import { providerFor } from "@/server/ai";
+import { createWorkspaceVerifier } from "@/lib/verification";
+import { readEnabledProviderIds, providerFor } from "@/server/ai";
+import { loadHistory } from "@/server/routing";
+
+const MODE = { SAVINGS: "savings", BALANCED: "balanced", QUALITY: "quality" } as const;
 
 const EXECUTION_STATE = {
   queued: "QUEUED",
@@ -50,6 +54,7 @@ export async function executeStoredProject(
       where: { id: projectId },
       include: {
         plans: { orderBy: { createdAt: "desc" }, take: 1 },
+        budgets: { orderBy: { createdAt: "desc" }, take: 1 },
         tasks: {
           orderBy: { sequence: "asc" },
           take: 201,
@@ -106,6 +111,11 @@ export async function executeStoredProject(
             : null,
           alreadyCompleted,
           priorResult: alreadyCompleted ? previous?.result ?? null : null,
+          type: asMember(TASK_TYPES, task.type.toLowerCase()) ?? undefined,
+          difficulty: asMember(TASK_DIFFICULTIES, task.difficulty.toLowerCase()) ?? undefined,
+          priority: asMember(TASK_PRIORITIES, task.priority.toLowerCase()) ?? undefined,
+          complexity: task.complexity,
+          successProbability: readProbability(decision?.successProbability),
         },
       ];
     });
@@ -124,6 +134,15 @@ export async function executeStoredProject(
       });
     if (!run) return { ok: false, message: "A task run is already in progress." };
     runId = run.id;
+    const enabled = await readEnabledProviderIds(prisma);
+    const availableProviders = new Set<ProviderId>();
+    for (const providerId of PROVIDER_IDS) {
+      const key = env[providerKey(providerId)];
+      if (enabled.has(providerId) && key?.trim()) availableProviders.add(providerId);
+    }
+    const history = await loadHistory(prisma);
+    const verify = createWorkspaceVerifier(process.cwd());
+    const budgetUsd = project.budgets[0]?.limitAmount.toString() ?? null;
     const controller = new AbortController();
     const timer = setInterval(() => {
       void prisma.executionRun
@@ -158,6 +177,12 @@ export async function executeStoredProject(
           const quote = calculateCost(match.pricing, usage);
           return quote.priced ? quote.amount : null;
         },
+        verify,
+        budgetUsd,
+        mode: MODE[project.optimizationMode],
+        models: registry,
+        availableProviders,
+        history,
       });
     } catch (error) {
       clearInterval(timer);
@@ -264,6 +289,42 @@ export async function executeStoredProject(
                   amount: call.actualCostUsd,
                   currency: "USD",
                 },
+              });
+            }
+          }
+          const recordedAt = Date.now();
+          for (const [index, verification] of result.verifications.entries()) {
+            const failedCheck = verification.checks.find((check) => check.outcome === "fail");
+            const saved = await tx.verification.create({
+              data: {
+                taskId: task.id,
+                status: legacyVerificationStatus(verification.outcome),
+                outcome: verification.outcome.toUpperCase() as "PASS" | "FAIL" | "PARTIAL" | "UNKNOWN",
+                notes: verification.summary,
+                stopReason: index === result.verifications.length - 1 ? result.verificationStopReason : null,
+                command: verification.checks.map((check) => check.command).join("\n") || null,
+                output: clipText(verification.checks.map((check) => check.output).join("\n\n")),
+                exitCode: failedCheck?.exitCode ?? verification.checks[0]?.exitCode ?? null,
+                durationMs: verification.durationMs,
+                errors: verification.errors,
+                costUsd: verification.costUsd,
+                createdAt: new Date(recordedAt + index),
+              },
+            });
+            if (verification.checks.length > 0) {
+              await tx.verificationCheck.createMany({
+                data: verification.checks.map((check, checkIndex) => ({
+                  verificationId: saved.id,
+                  taskId: task.id,
+                  kind: check.kind.toUpperCase() as "TEST" | "LINT" | "TYPECHECK" | "BUILD",
+                  command: check.command,
+                  output: check.output,
+                  exitCode: check.exitCode,
+                  durationMs: check.durationMs,
+                  errors: check.errors,
+                  outcome: check.outcome.toUpperCase() as "PASS" | "FAIL" | "UNKNOWN",
+                  createdAt: new Date(recordedAt + index * 10 + checkIndex),
+                })),
               });
             }
           }
@@ -438,4 +499,32 @@ function isTakenOver(error: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function asMember<T extends string>(values: readonly T[], value: string): T | null {
+  return values.find((entry) => entry === value) ?? null;
+}
+
+function readProbability(value: { toString(): string } | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value.toString());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function providerKey(provider: ProviderId): "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GEMINI_API_KEY" {
+  if (provider === "openai") return "OPENAI_API_KEY";
+  if (provider === "anthropic") return "ANTHROPIC_API_KEY";
+  return "GEMINI_API_KEY";
+}
+
+function legacyVerificationStatus(outcome: string): "PASSED" | "FAILED" | "SKIPPED" {
+  if (outcome === "pass") return "PASSED";
+  if (outcome === "unknown") return "SKIPPED";
+  return "FAILED";
+}
+
+function clipText(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > 8_000 ? `${trimmed.slice(0, 7_999)}…` : trimmed;
 }

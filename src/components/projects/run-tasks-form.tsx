@@ -26,7 +26,7 @@ export function RunTasksForm({ projectId }: { projectId: string }) {
   return (
     <div className="mt-4 grid gap-2">
       <p className="text-xs text-muted-foreground">
-        Run sends each unfinished task and its dependency results to the selected model. Tasks that already completed stay as they are. Independent tasks can run together. The reply is stored. Shell commands in that reply are not executed, and the repository is not modified.
+        Run sends each unfinished task to the selected model, then runs the test, lint, typecheck, and build scripts from the project configuration. A reply is not treated as success unless those checks pass. The reply is stored and is not applied to the repository.
       </p>
       {shown.run ? (
         <p role={runState.saved ? "status" : "alert"} className={runState.saved ? "text-sm text-muted-foreground" : "text-sm text-destructive"}>

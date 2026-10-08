@@ -149,7 +149,7 @@ async function ensureModel(
   return row.id;
 }
 
-async function loadHistory(prisma: NonNullable<ReturnType<typeof getPrisma>>): Promise<HistorySample[]> {
+export async function loadHistory(prisma: NonNullable<ReturnType<typeof getPrisma>>): Promise<HistorySample[]> {
   const rows = await prisma.$queryRaw<
     Array<{ provider: string; modelSlug: string; taskType: string; attempts: number | bigint; successes: number | bigint }>
   >`

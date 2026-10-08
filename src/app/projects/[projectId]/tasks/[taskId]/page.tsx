@@ -7,7 +7,7 @@ import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { labelExecutionState, labelOptimizationMode, labelRoutingOutcome, labelTaskDifficulty, labelTaskPriority, labelTaskType } from "@/lib/labels";
+import { labelExecutionState, labelOptimizationMode, labelRoutingOutcome, labelTaskDifficulty, labelTaskPriority, labelTaskType, labelVerificationOutcome } from "@/lib/labels";
 import { getPlannedTask, type PlannedTaskDetail } from "@/server/plan";
 
 export const metadata = { title: "Task" };
@@ -173,7 +173,7 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
               <CardDescription>
                 {task.execution
                   ? "Tokens, cost, and the stored reply from the latest run."
-                  : "No run is stored yet. Running a task does not execute shell commands."}
+                  : "No run is stored yet. A model reply is not treated as success until the project checks pass."}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
@@ -210,6 +210,45 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">Run tasks from the project page to call the selected model.</p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Verification</CardTitle>
+              <CardDescription>
+                {task.verifications.length > 0
+                  ? "Independent project checks. A model reply is not enough to call the task complete."
+                  : "No verification is stored yet. Tests, lint, type checking, and the production build run from the project configuration."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {task.verifications.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Run tasks from the project page. The checks use the scripts in this project, not commands from the model.</p>
+              ) : (
+                task.verifications.map((verification, index) => (
+                  <section key={verification.id} className="grid gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0">
+                    <p className="text-sm">
+                      Attempt {index + 1}
+                      {verification.outcome ? ` · ${labelVerificationOutcome(verification.outcome)}` : ""}
+                      {verification.durationMs !== null ? ` · ${verification.durationMs} ms` : ""}
+                      {verification.costUsd ? ` · $${verification.costUsd}` : ""}
+                    </p>
+                    {verification.summary ? <p className="text-sm leading-6 text-muted-foreground">{verification.summary}</p> : null}
+                    {verification.errors ? <p className="text-sm text-destructive whitespace-pre-wrap">{verification.errors}</p> : null}
+                    {verification.stopReason ? <p className="text-sm">Stopped because {verification.stopReason}</p> : null}
+                    {verification.checks.map((check) => (
+                      <div key={check.id} className="grid gap-1 rounded-lg border border-border px-3 py-2">
+                        <p className="text-xs text-muted-foreground">
+                          {labelVerificationOutcome(check.outcome)} · {check.command}
+                          {check.exitCode === null ? "" : ` · exit ${check.exitCode}`} · {check.durationMs} ms
+                        </p>
+                        {check.errors ? <p className="text-sm text-destructive whitespace-pre-wrap">{check.errors}</p> : null}
+                        {check.output ? <p className="text-xs leading-5 whitespace-pre-wrap text-muted-foreground">{check.output}</p> : null}
+                      </div>
+                    ))}
+                  </section>
+                ))
               )}
             </CardContent>
           </Card>

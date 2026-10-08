@@ -18,6 +18,7 @@ const REQUIRED_MODELS = [
   "ExecutionLog",
   "ModelDecision",
   "Verification",
+  "VerificationCheck",
   "TokenUsage",
   "CostRecord",
   "Budget",
@@ -65,6 +66,10 @@ describe("database initialization", () => {
       "prisma/migrations/20261008250000_execution_run_heartbeat/migration.sql",
       "utf8",
     );
+    const verificationMigration = readFileSync(
+      "prisma/migrations/20261008260000_verification_checks/migration.sql",
+      "utf8",
+    );
     const models = [...schema.matchAll(/^model (\w+)/gm)].map((match) => match[1]);
     expect(models).toEqual(REQUIRED_MODELS);
     for (const model of REQUIRED_MODELS) {
@@ -76,6 +81,8 @@ describe("database initialization", () => {
         expect(planMigration).toContain(`CREATE TABLE "${model}"`);
       } else if (model === "ExecutionRun" || model === "TaskExecution" || model === "ExecutionLog") {
         expect(executionMigration).toContain(`CREATE TABLE "${model}"`);
+      } else if (model === "VerificationCheck") {
+        expect(verificationMigration).toContain(`CREATE TABLE "${model}"`);
       } else {
         expect(migration).toContain(`CREATE TABLE "${model}"`);
       }
@@ -95,6 +102,8 @@ describe("database initialization", () => {
     expect(executionHeartbeat).toContain("heartbeatAt");
     expect(schema).toContain("heartbeatAt");
     expect(schema).toContain("ignoredCommand");
+    expect(verificationMigration).toContain("VerificationOutcome");
+    expect(schema).toContain("enum VerificationOutcome");
     expect(schema).toContain("enum ExecutionState");
     expect(schema).toContain("enum OptimizationMode");
     expect(schema).toContain("enum TaskType");
