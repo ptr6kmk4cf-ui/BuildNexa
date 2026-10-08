@@ -16,3 +16,22 @@ export const initialCreateProjectFormState: CreateProjectFormState = {
   message: null,
   fieldErrors: {},
 };
+
+export type PlanProjectFieldErrors = {
+  goal?: string[];
+  budget?: string[];
+  optimizationMode?: string[];
+  repositoryId?: string[];
+};
+
+export type PlanProjectFormState = {
+  status: "idle" | "error";
+  message: string | null;
+  fieldErrors: PlanProjectFieldErrors;
+};
+
+export const initialPlanProjectFormState: PlanProjectFormState = {
+  status: "idle",
+  message: null,
+  fieldErrors: {},
+};

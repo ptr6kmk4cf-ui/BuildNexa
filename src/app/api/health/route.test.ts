@@ -28,7 +28,7 @@ describe("health API", () => {
     expect(report).toMatchObject({
       status: "ok",
       service: "ai-project-optimizer",
-      phase: 3,
+      phase: 4,
       checks: { app: "ok", database: "unconfigured" },
       timestamp: "2026-10-08T12:00:00.000Z",
     });

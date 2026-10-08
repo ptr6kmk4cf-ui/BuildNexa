@@ -48,6 +48,33 @@ export const createProjectInputSchema = z.object({
 
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
 
+export const planProjectInputSchema = z.object({
+  goal: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z
+      .string()
+      .min(12, "Describe the software change in at least a short sentence.")
+      .max(4000, "The goal must be 4000 characters or fewer."),
+  ),
+  budget: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z
+      .string()
+      .regex(/^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/, "Enter a USD budget such as 25 or 25.00."),
+  ),
+  optimizationMode: z.enum(["savings", "balanced", "quality"], {
+    error: "Choose Savings, Balanced, or Quality.",
+  }),
+  repositoryId: z.preprocess((value) => {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }, z.cuid("Choose a connected repository.").optional()),
+});
+
+export type PlanProjectInput = z.infer<typeof planProjectInputSchema>;
+
 export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });

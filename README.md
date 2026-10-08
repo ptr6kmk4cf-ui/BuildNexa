@@ -1,6 +1,6 @@
 # AI Project Optimizer
 
-Phase 3 adds model providers. OpenAI, Anthropic, and Gemini share one provider interface and one model registry. The workspace still does not route tasks, call a model from the pages, execute repository code, or modify GitHub.
+Phase 4 adds a project planner. A goal, a budget, and an optimization mode become a task graph. The planner does not select a model, execute tasks, read the repository tree, or open a pull request.
 
 ## Architecture
 
@@ -8,9 +8,11 @@ Next.js (App Router) renders the workspace. Server Components read PostgreSQL th
 
 ```text
 src/app                routes: dashboard, projects, github, models, costs, activity, settings
+src/app/projects/new   goal, budget, and optimization mode
 src/app/api/health     process health, including database status
 src/app/api/github     OAuth start and callback. Tokens never reach the browser.
-src/server             request-time queries, project actions, GitHub, and provider settings
+src/server             request-time queries, plans, GitHub, and provider settings
+src/lib/planner        task graph, dependency checks, and context-request hints
 src/lib/ai             provider interface, adapters, registry, and cost calculation
 src/lib                env, validation, errors, logging, encryption, GitHub API client
 prisma                 schema and migrations
@@ -25,7 +27,11 @@ prisma                 schema and migrations
 | Logging | JSON logs. Connection strings and secret-shaped fields are redacted. |
 | UI | Shared shell with dashboard, projects, models, costs, activity, and settings. Data regions show loading, empty, unconfigured, and error states. |
 
-The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `Task`, `TaskDependency`, `TaskAttempt`, `ModelDecision`, `Verification`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, `AuditLog`, `GithubAccount`, `ConnectedRepository`, and `ProviderPreference`.
+The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `ProjectPlan`, `Task`, `TaskDependency`, `TaskAttempt`, `ModelDecision`, `Verification`, `TokenUsage`, `CostRecord`, `Budget`, `PullRequest`, `AuditLog`, `GithubAccount`, `ConnectedRepository`, and `ProviderPreference`.
+
+`createPlan` turns a software objective into ordered tasks. Each task has an id, description, type, priority, difficulty, dependencies, expected output, verification criteria, and a complexity from 1 to 5. Savings omits the extra architecture and documentation steps. Balanced follows analysis, architecture, implementation, tests, security when the goal needs it, and final verification. Quality adds planning and documentation. A dependency that would cycle is rejected. Context requests store repository identity and path hints for a later retrieval step. They do not contain file contents.
+
+The new-project screen collects the goal, a USD budget, and Savings, Balanced, or Quality. When GitHub is connected, the selected repository contributes its name, branch, visibility, and description. After the plan is saved, the project page shows the graph and each task can be opened on its own.
 
 `AIProvider` is the only execution surface. `OpenAIProvider`, `AnthropicProvider`, and `GeminiProvider` adapt vendor HTTP responses into that surface. There is no routing engine. Pages read the registry; they do not call `execute`.
 
@@ -112,7 +118,7 @@ npm start           # production server on port 43123
 
 ## Tests
 
-Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, and model capabilities.
+Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, model capabilities, simple and complex plans, invalid objectives, dependency links, cycle rejection, and task validation.
 
 ```bash
 npm test

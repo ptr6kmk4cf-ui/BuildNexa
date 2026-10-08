@@ -1,8 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
-import { listRepositoryOptions } from "@/server/github";
 import { PageHeader } from "@/components/layout/page-header";
+import { buttonVariants } from "@/components/ui/button";
 import { ProjectStatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
 import { PanelSkeleton } from "@/components/states/panel-skeleton";
@@ -18,11 +17,11 @@ export default function ProjectsPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Projects"
-        description="Each project holds an objective. A connected GitHub repository can be attached when you create it. Nothing is pushed from this screen."
+        description="Plan a software change into a task graph. A connected repository can supply metadata. Nothing is executed or pushed from this screen."
         actions={
-          <Suspense fallback={null}>
-            <NewProjectAction />
-          </Suspense>
+          <Link href="/projects/new" className={buttonVariants()}>
+            New project
+          </Link>
         }
       />
       <Suspense fallback={<PanelSkeleton cards={2} />}>
@@ -30,11 +29,6 @@ export default function ProjectsPage() {
       </Suspense>
     </>
   );
-}
-
-async function NewProjectAction() {
-  const repositories = await listRepositoryOptions();
-  return <CreateProjectDialog repositories={repositories} />;
 }
 
 async function ProjectList() {
@@ -45,7 +39,7 @@ async function ProjectList() {
       {result.status === "ready" && result.data.length === 0 ? (
         <EmptyState
           title="No projects yet"
-          description="Start with a name and the outcome you want. Nothing is sent to a model from this screen."
+          description="Start with a goal, a budget, and an optimization mode. The planner writes the task graph and does not call a model."
         />
       ) : null}
       {result.status === "ready" && result.data.length > 0 ? (

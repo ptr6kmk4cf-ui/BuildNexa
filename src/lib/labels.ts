@@ -71,3 +71,40 @@ export function labelBudgetPeriod(period: string): string {
 export function labelAuditAction(action: string): string {
   return labelFrom(auditActionLabel, action);
 }
+
+const taskTypeLabel: Record<string, string> = {
+  analysis: "Analysis",
+  planning: "Planning",
+  architecture: "Architecture",
+  coding: "Coding",
+  refactoring: "Refactoring",
+  debugging: "Debugging",
+  testing: "Testing",
+  documentation: "Documentation",
+  security: "Security",
+  review: "Review",
+};
+
+const taskDifficultyLabel: Record<string, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
+const optimizationModeLabel: Record<string, string> = {
+  savings: "Savings",
+  balanced: "Balanced",
+  quality: "Quality",
+};
+
+export function labelTaskType(type: string): string {
+  return taskTypeLabel[type.toLowerCase()] ?? type;
+}
+
+export function labelTaskDifficulty(difficulty: string): string {
+  return taskDifficultyLabel[difficulty.toLowerCase()] ?? difficulty;
+}
+
+export function labelOptimizationMode(mode: string): string {
+  return optimizationModeLabel[mode.toLowerCase()] ?? mode;
+}

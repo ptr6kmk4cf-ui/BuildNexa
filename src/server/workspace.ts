@@ -9,6 +9,8 @@ import { databaseCheck } from "@/lib/health";
 import { logger } from "@/lib/logger";
 import type { ProjectRepositoryLink } from "@/lib/github/types";
 import { describePermissions, readPermissions } from "@/lib/github/permissions";
+import { readContextRequests } from "@/lib/planner";
+import type { ContextRequest } from "@/lib/planner";
 import { slugify } from "@/lib/slug";
 import { idSchema, paginationSchema, parseInput, type CreateProjectInput } from "@/lib/validation";
 import { enabledModelCount, readEnabledProviderIds } from "@/server/ai";
@@ -93,8 +95,15 @@ export type ProjectDetail = {
   description: string | null;
   objective: string | null;
   status: string;
+  optimizationMode: string;
   createdAt: string;
   updatedAt: string;
+  plan: {
+    id: string;
+    summary: string;
+    optimizationMode: string;
+    contextRequests: ContextRequest[];
+  } | null;
   repositories: Array<{
     id: string;
     name: string;
@@ -107,9 +116,18 @@ export type ProjectDetail = {
   }>;
   tasks: Array<{
     id: string;
+    planKey: string | null;
     title: string;
+    description: string | null;
+    type: string;
     status: string;
     priority: string;
+    difficulty: string;
+    complexity: number;
+    expectedOutput: string;
+    verificationCriteria: string;
+    sequence: number;
+    dependsOn: string[];
   }>;
   budgets: Array<{
     id: string;
@@ -254,7 +272,12 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
       where: { id: parsed.data },
       include: {
         repositories: { orderBy: { name: "asc" }, take: 50 },
-        tasks: { orderBy: { updatedAt: "desc" }, take: 50 },
+        plans: { orderBy: { createdAt: "desc" }, take: 1 },
+        tasks: {
+          orderBy: { sequence: "asc" },
+          take: 100,
+          include: { dependencies: { select: { dependsOnTaskId: true } } },
+        },
         budgets: { orderBy: { createdAt: "desc" }, take: 20 },
         pullRequests: { orderBy: { updatedAt: "desc" }, take: 20 },
       },
@@ -268,8 +291,17 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
       description: project.description,
       objective: project.objective,
       status: project.status,
+      optimizationMode: project.optimizationMode,
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),
+      plan: project.plans[0]
+        ? {
+            id: project.plans[0].id,
+            summary: project.plans[0].summary,
+            optimizationMode: project.plans[0].optimizationMode,
+            contextRequests: readContextRequests(project.plans[0].contextRequests),
+          }
+        : null,
       repositories: project.repositories.map((repository) => ({
         id: repository.id,
         name: repository.name,
@@ -282,9 +314,18 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
       })),
       tasks: project.tasks.map((task) => ({
         id: task.id,
+        planKey: task.planKey,
         title: task.title,
+        description: task.description,
+        type: task.type,
         status: task.status,
         priority: task.priority,
+        difficulty: task.difficulty,
+        complexity: task.complexity,
+        expectedOutput: task.expectedOutput,
+        verificationCriteria: task.verificationCriteria,
+        sequence: task.sequence,
+        dependsOn: task.dependencies.map((dependency) => dependency.dependsOnTaskId),
       })),
       budgets: project.budgets.map((budget) => ({
         id: budget.id,

@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
 import { PageHeader } from "@/components/layout/page-header";
 import { SetupHint } from "@/components/states/setup-hint";
 import { PanelSkeleton } from "@/components/states/panel-skeleton";
@@ -37,23 +36,21 @@ async function GithubPanel({
   const error = githubErrorMessage(query.error);
   const notice = githubNotice(query.notice);
   const selected = idSchema.safeParse(query.repository).success ? query.repository : undefined;
-  const repositoryChoices = page.repositories.map((repository) => ({
-    id: repository.id,
-    fullName: repository.fullName,
-    defaultBranch: repository.defaultBranch,
-    private: repository.private,
-    githubRepoId: repository.githubRepoId,
-  }));
 
   return (
     <>
       <PageHeader
         eyebrow="Source"
         title="GitHub"
-        description="Connect an account, choose a repository you can access, and attach it to a project. This phase only reads repository metadata. It does not create branches, push commits, or open pull requests."
+        description="Connect an account and choose a repository. Planning can use its name, branch, and description. This phase does not read the file tree, create branches, push commits, or open pull requests."
         actions={
           page.account ? (
-            <CreateProjectDialog repositories={repositoryChoices} defaultRepositoryId={selected} />
+            <Link
+              href={selected ? `/projects/new?repository=${selected}` : "/projects/new"}
+              className={buttonVariants()}
+            >
+              Plan a project
+            </Link>
           ) : null
         }
       />

@@ -9,6 +9,7 @@ const REQUIRED_MODELS = [
   "Repository",
   "Provider",
   "Model",
+  "ProjectPlan",
   "Task",
   "TaskDependency",
   "TaskAttempt",
@@ -45,6 +46,10 @@ describe("database initialization", () => {
       "prisma/migrations/20261008200000_provider_preferences/migration.sql",
       "utf8",
     );
+    const planMigration = readFileSync(
+      "prisma/migrations/20261008220000_project_plans/migration.sql",
+      "utf8",
+    );
     const models = [...schema.matchAll(/^model (\w+)/gm)].map((match) => match[1]);
     expect(models).toEqual(REQUIRED_MODELS);
     for (const model of REQUIRED_MODELS) {
@@ -52,6 +57,8 @@ describe("database initialization", () => {
         expect(githubMigration).toContain(`CREATE TABLE "${model}"`);
       } else if (model === "ProviderPreference") {
         expect(providerMigration).toContain(`CREATE TABLE "${model}"`);
+      } else if (model === "ProjectPlan") {
+        expect(planMigration).toContain(`CREATE TABLE "${model}"`);
       } else {
         expect(migration).toContain(`CREATE TABLE "${model}"`);
       }
@@ -61,6 +68,10 @@ describe("database initialization", () => {
     expect(schema).not.toContain("accessToken");
     expect(schema).not.toContain("apiKey");
     expect(providerMigration).toContain("ProviderPreference_userId_provider_key");
+    expect(planMigration).toContain("Task_complexity_range");
+    expect(planMigration).toContain("Task_planId_planKey_key");
+    expect(schema).toContain("enum OptimizationMode");
+    expect(schema).toContain("enum TaskType");
     expect(schema).toContain("@@unique([userId, githubRepoId])");
     expect(schema).toContain("@@unique([taskId, dependsOnTaskId])");
     expect(schema).toContain("@@unique([userId, slug])");

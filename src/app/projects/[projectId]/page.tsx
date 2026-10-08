@@ -1,13 +1,14 @@
 import { Suspense } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { MissingProject } from "@/components/projects/missing-project";
-import { ProjectStatusBadge, TaskStatusBadge } from "@/components/status-badge";
+import { ProjectStatusBadge } from "@/components/status-badge";
 import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatTimestamp, formatUsd } from "@/lib/format";
-import { labelBudgetPeriod, labelPullRequestStatus, labelTaskPriority } from "@/lib/labels";
+import { labelBudgetPeriod, labelOptimizationMode, labelPullRequestStatus } from "@/lib/labels";
 import { AttachRepositoryForm } from "@/components/github/attach-repository-form";
+import { TaskGraph } from "@/components/projects/task-graph";
 import { githubNotice } from "@/lib/github/messages";
 import { listRepositoryOptions } from "@/server/github";
 import { getProject, type ProjectDetail } from "@/server/workspace";
@@ -72,9 +73,23 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
           {project.objective ?? "No objective has been written for this project."}
         </p>
         <p className="mt-3 text-xs text-muted-foreground">
-          Created {formatTimestamp(project.createdAt)} · Updated {formatTimestamp(project.updatedAt)}
+          {labelOptimizationMode(project.optimizationMode)} · Created {formatTimestamp(project.createdAt)} · Updated{" "}
+          {formatTimestamp(project.updatedAt)}
         </p>
       </div>
+      <section className="mb-6 rounded-xl border border-border bg-card px-5 py-4">
+        <h2 className="text-xs font-medium tracking-[0.16em] text-muted-foreground uppercase">Task graph</h2>
+        {project.plan ? <p className="mt-2 max-w-3xl text-sm leading-6">{project.plan.summary}</p> : null}
+        {project.tasks.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No plan is stored yet. Create one from the new project screen. Planning does not run the tasks.
+          </p>
+        ) : (
+          <div className="mt-4">
+            <TaskGraph projectId={project.id} tasks={project.tasks} />
+          </div>
+        )}
+      </section>
       <div className="grid gap-4 lg:grid-cols-2">
         <RecordCard
           title="Repositories"
@@ -95,19 +110,8 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
           extra={available.length > 0 ? <AttachRepositoryForm projectId={project.id} repositories={available} /> : null}
         />
         <RecordCard
-          title="Tasks"
-          description="Broken out of the objective in a later phase."
-          empty="No tasks are stored yet."
-          items={project.tasks.map((task) => ({
-            id: task.id,
-            title: task.title,
-            meta: `${labelTaskPriority(task.priority)} priority`,
-            badge: <TaskStatusBadge status={task.status} />,
-          }))}
-        />
-        <RecordCard
           title="Budget"
-          description="Limits that later runs should stay inside."
+          description="The limit recorded with the plan. Nothing has been spent."
           empty="No budget is set."
           items={project.budgets.map((budget) => ({
             id: budget.id,
@@ -117,7 +121,7 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
         />
         <RecordCard
           title="Pull requests"
-          description="Opened later. This phase does not create pull requests."
+          description="A plan can include a pull request checklist. This phase does not open one."
           empty="No pull requests are recorded."
           items={project.pullRequests.map((pullRequest) => ({
             id: pullRequest.id,

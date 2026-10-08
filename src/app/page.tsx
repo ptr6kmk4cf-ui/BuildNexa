@@ -20,7 +20,7 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Dashboard"
-        description="Choose which model providers are available, and keep projects, repositories, and cost on record. This phase does not route work, call a model from the workspace, push code, or open a pull request."
+        description="Turn a software goal into a task graph. The planner does not select a model, run the tasks, push code, or open a pull request."
       />
       <Suspense fallback={<PanelSkeleton cards={4} />}>
         <DashboardPanel />
@@ -59,7 +59,7 @@ function DashboardReady({
 }) {
   const stats = [
     { label: "Projects", value: String(data.projectCount), hint: "Objectives on record" },
-    { label: "Tasks", value: String(data.taskCount), hint: "Not generated in this phase" },
+    { label: "Tasks", value: String(data.taskCount), hint: "Planned, not executed" },
     { label: "Enabled models", value: String(data.enabledModelCount), hint: "Registry models for enabled providers" },
     { label: "Recorded spend", value: formatUsd(data.recordedSpendUsd), hint: "USD cost records" },
   ];
@@ -85,10 +85,10 @@ function DashboardReady({
           {data.recentProjects.length === 0 ? (
             <EmptyState
               title="No projects yet"
-              description="Create a project when you know the objective. Provider choices are saved separately in settings."
+              description="Plan a project when you know the software change. Provider choices stay in settings, and no model is called from here."
               action={
-                <Link href="/projects" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
-                  Go to projects
+                <Link href="/projects/new" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
+                  Plan a project
                 </Link>
               }
             />
