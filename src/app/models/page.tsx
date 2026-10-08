@@ -15,7 +15,7 @@ export default function ModelsPage() {
       <PageHeader
         eyebrow="Catalog"
         title="Models"
-        description="The registry lists each model's context window, capability ratings, and any prices you configured. API keys stay on the server. This page does not call a provider or choose a model."
+        description="The registry lists each model's context window, capability ratings, and any prices you configured. Routing uses those ratings. This page does not call a provider."
       />
       <Suspense fallback={<PanelSkeleton cards={2} />}>
         <ModelCatalog />
@@ -61,8 +61,8 @@ async function ModelCatalog() {
               </CardTitle>
               <CardDescription>
                 {provider.enabled
-                  ? "Available for a later selection phase."
-                  : "Turned off in settings. The registry entry stays visible."}
+                  ? "Enabled providers with an API key can be chosen by the router."
+                  : "Turned off in settings. The router will not select these models."}
               </CardDescription>
             </CardHeader>
             <CardContent>

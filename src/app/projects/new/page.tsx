@@ -18,7 +18,7 @@ export default function NewProjectPage({
       <PageHeader
         eyebrow="Planner"
         title="New project"
-        description="Describe the software change. The planner turns it into a task graph with dependencies, and then stops. It does not select a model, edit the repository, or open a pull request."
+        description="Describe the software change. The planner turns it into a task graph, and routing can record a model for each task. Nothing is executed, and the repository is not changed."
       />
       <Suspense fallback={<PanelSkeleton cards={1} />}>
         <NewProjectForm searchParams={searchParams} />

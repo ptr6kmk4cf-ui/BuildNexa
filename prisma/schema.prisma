@@ -1,7 +1,7 @@
 // AI Project Optimizer data model.
-// Phase 4 stores a project plan and its task graph.
+// Phase 5 stores a model routing decision for each task.
 // API keys are not stored. GitHub access tokens remain ciphertext only.
-// The planner does not execute tasks or open pull requests.
+// Routing does not execute tasks or modify a repository.
 
 generator client {
   provider = "prisma-client"
@@ -288,14 +288,22 @@ model TaskAttempt {
 }
 
 model ModelDecision {
-  id        String   @id @default(cuid())
-  taskId    String
-  modelId   String
-  reason    String   @db.Text
-  createdAt DateTime @default(now())
+  id                   String            @id @default(cuid())
+  taskId               String
+  modelId              String?
+  provider             String?
+  modelSlug            String?
+  optimizationMode     OptimizationMode  @default(BALANCED)
+  estimatedCost        Decimal?          @db.Decimal(14, 6)
+  successProbability   Decimal?          @db.Decimal(5, 4)
+  outcome              String            @default("selected")
+  reason               String            @db.Text
+  factors              Json              @default("[]")
+  candidates           Json              @default("[]")
+  createdAt            DateTime          @default(now())
 
-  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  model Model @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  task  Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  model Model? @relation(fields: [modelId], references: [id], onDelete: Restrict)
 
   @@index([taskId, createdAt])
   @@index([modelId])

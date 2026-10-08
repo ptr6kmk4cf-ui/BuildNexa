@@ -11,6 +11,7 @@ export type GraphTask = {
   priority: string;
   complexity: number;
   dependsOn: string[];
+  modelLabel?: string | null;
 };
 
 export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: GraphTask[] }) {
@@ -40,6 +41,7 @@ export function TaskGraph({ projectId, tasks }: { projectId: string; tasks: Grap
                   </span>
                   <span className="mt-2 block text-xs text-muted-foreground">
                     {labelTaskPriority(task.priority)} priority · Complexity {task.complexity} of 5
+                    {task.modelLabel ? ` · ${task.modelLabel}` : ""}
                     {task.planKey ? ` · ${task.planKey}` : ""}
                   </span>
                 </Link>

@@ -7,7 +7,7 @@ import { PanelSkeleton } from "@/components/states/panel-skeleton";
 import { WorkspaceBody } from "@/components/states/workspace-body";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { labelTaskDifficulty, labelTaskPriority, labelTaskType } from "@/lib/labels";
+import { labelOptimizationMode, labelRoutingOutcome, labelTaskDifficulty, labelTaskPriority, labelTaskType } from "@/lib/labels";
 import { getPlannedTask, type PlannedTaskDetail } from "@/server/plan";
 
 export const metadata = { title: "Task" };
@@ -114,6 +114,54 @@ function TaskBody({ task }: { task: PlannedTaskDetail }) {
                     </li>
                   ))}
                 </ul>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Model decision</CardTitle>
+              <CardDescription>
+                {task.decision
+                  ? task.decision.estimateNote
+                  : "No model has been chosen. Routing does not run the task or change a repository."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {task.decision ? (
+                <>
+                  <p className="text-sm">
+                    {labelRoutingOutcome(task.decision.outcome)}
+                    {task.decision.modelName ? ` · ${task.decision.modelName}` : ""}
+                    {task.decision.modelSlug ? ` (${task.decision.modelSlug})` : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {labelOptimizationMode(task.decision.mode)}
+                    {task.decision.estimatedCostUsd ? ` · Estimated $${task.decision.estimatedCostUsd}` : ""}
+                    {task.decision.successProbability !== null
+                      ? ` · Success estimate ${Math.round(task.decision.successProbability * 100)}%`
+                      : ""}
+                  </p>
+                  <ul className="grid gap-2">
+                    {task.decision.factors.map((factor) => (
+                      <li key={factor.name} className="text-sm leading-6">
+                        {factor.detail}
+                      </li>
+                    ))}
+                  </ul>
+                  {task.decision.candidates.length > 0 ? (
+                    <ul className="grid gap-2 border-t border-border pt-3">
+                      {task.decision.candidates.map((candidate) => (
+                        <li key={candidate.modelId} className="text-xs text-muted-foreground">
+                          {candidate.displayName}
+                          {candidate.eligible ? " · eligible" : ""}
+                          {candidate.detail ? ` · ${candidate.detail}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Choose models from the project page to record a decision.</p>
               )}
             </CardContent>
           </Card>

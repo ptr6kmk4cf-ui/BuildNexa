@@ -128,6 +128,11 @@ export type ProjectDetail = {
     verificationCriteria: string;
     sequence: number;
     dependsOn: string[];
+    routing: {
+      outcome: string;
+      modelName: string | null;
+      estimatedCostUsd: string | null;
+    } | null;
   }>;
   budgets: Array<{
     id: string;
@@ -276,7 +281,10 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         tasks: {
           orderBy: { sequence: "asc" },
           take: 100,
-          include: { dependencies: { select: { dependsOnTaskId: true } } },
+          include: {
+            dependencies: { select: { dependsOnTaskId: true } },
+            decisions: { orderBy: { createdAt: "desc" }, take: 1, include: { model: { select: { name: true } } } },
+          },
         },
         budgets: { orderBy: { createdAt: "desc" }, take: 20 },
         pullRequests: { orderBy: { updatedAt: "desc" }, take: 20 },
@@ -326,6 +334,13 @@ export async function getProject(projectId: string): Promise<LoadState<ProjectDe
         verificationCriteria: task.verificationCriteria,
         sequence: task.sequence,
         dependsOn: task.dependencies.map((dependency) => dependency.dependsOnTaskId),
+        routing: task.decisions[0]
+          ? {
+              outcome: task.decisions[0].outcome,
+              modelName: task.decisions[0].model?.name ?? null,
+              estimatedCostUsd: task.decisions[0].estimatedCost?.toString() ?? null,
+            }
+          : null,
       })),
       budgets: project.budgets.map((budget) => ({
         id: budget.id,

@@ -55,7 +55,7 @@ export function PlanForm({
           aria-describedby={state.fieldErrors.goal ? "plan-goal-error plan-goal-hint" : "plan-goal-hint"}
         />
         <p id="plan-goal-hint" className="text-xs text-muted-foreground">
-          Describe the software change. The project name is taken from the first clause. Planning builds a task graph and does not call a model, edit files, or open a pull request.
+          Describe the software change. The project name is taken from the first clause. Planning builds a task graph and can record a model choice. It does not call the model, edit files, or open a pull request.
         </p>
         {state.fieldErrors.goal ? (
           <p id="plan-goal-error" role="alert" className="text-xs text-destructive">
@@ -99,7 +99,7 @@ export function PlanForm({
             <option value="quality">Quality — extra planning and documentation</option>
           </NativeSelect>
           <p id="plan-mode-hint" className="text-xs text-muted-foreground">
-            Changes how many tasks are created. It does not select a model.
+            Changes the task graph and how routing weighs cost against quality. It does not call a model.
           </p>
           {state.fieldErrors.optimizationMode ? (
             <p id="plan-mode-error" role="alert" className="text-xs text-destructive">

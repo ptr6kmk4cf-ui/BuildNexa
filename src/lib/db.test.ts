@@ -50,6 +50,10 @@ describe("database initialization", () => {
       "prisma/migrations/20261008220000_project_plans/migration.sql",
       "utf8",
     );
+    const routingMigration = readFileSync(
+      "prisma/migrations/20261008230000_model_routing/migration.sql",
+      "utf8",
+    );
     const models = [...schema.matchAll(/^model (\w+)/gm)].map((match) => match[1]);
     expect(models).toEqual(REQUIRED_MODELS);
     for (const model of REQUIRED_MODELS) {
@@ -70,6 +74,9 @@ describe("database initialization", () => {
     expect(providerMigration).toContain("ProviderPreference_userId_provider_key");
     expect(planMigration).toContain("Task_complexity_range");
     expect(planMigration).toContain("Task_planId_planKey_key");
+    expect(routingMigration).toContain("ModelDecision_success_probability_range");
+    expect(routingMigration).toContain("ALTER TABLE \"ModelDecision\" ALTER COLUMN \"modelId\" DROP NOT NULL");
+    expect(schema).toContain("successProbability");
     expect(schema).toContain("enum OptimizationMode");
     expect(schema).toContain("enum TaskType");
     expect(schema).toContain("@@unique([userId, githubRepoId])");

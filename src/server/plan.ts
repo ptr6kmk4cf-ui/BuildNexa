@@ -7,6 +7,9 @@ import { LOCAL_OPERATOR_EMAIL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
 import { getPrisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { readContextRequests, validatePlan } from "@/lib/planner";
+import { ESTIMATE_NOTE } from "@/lib/routing/config";
+import { readCandidateViews, readFactors, type DecisionCandidateView } from "@/lib/routing/read";
+import type { DecisionFactor } from "@/lib/routing/types";
 import type { OptimizationMode, PlannedWork } from "@/lib/planner";
 import { excerpt } from "@/lib/format";
 import { slugify } from "@/lib/slug";
@@ -65,6 +68,19 @@ export type PlannedTaskDetail = {
     defaultBranch: string | null;
     reason: string;
     pathHints: string[];
+  } | null;
+  decision: {
+    outcome: string;
+    modelName: string | null;
+    provider: string | null;
+    modelSlug: string | null;
+    mode: string;
+    estimatedCostUsd: string | null;
+    successProbability: number | null;
+    reason: string;
+    factors: DecisionFactor[];
+    candidates: DecisionCandidateView[];
+    estimateNote: string;
   } | null;
 };
 
@@ -229,6 +245,11 @@ export async function getPlannedTask(
         dependencies: {
           include: { dependsOn: { select: { id: true, title: true, planKey: true } } },
         },
+        decisions: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: { model: { select: { name: true } } },
+        },
       },
     });
     if (!task) return null;
@@ -251,6 +272,21 @@ export async function getPlannedTask(
       verificationCriteria: task.verificationCriteria,
       dependencies: task.dependencies.map((dependency) => dependency.dependsOn),
       context,
+      decision: task.decisions[0]
+        ? {
+            outcome: task.decisions[0].outcome,
+            modelName: task.decisions[0].model?.name ?? null,
+            provider: task.decisions[0].provider,
+            modelSlug: task.decisions[0].modelSlug,
+            mode: task.decisions[0].optimizationMode,
+            estimatedCostUsd: task.decisions[0].estimatedCost?.toString() ?? null,
+            successProbability: task.decisions[0].successProbability === null ? null : Number(task.decisions[0].successProbability.toString()),
+            reason: task.decisions[0].reason,
+            factors: readFactors(task.decisions[0].factors),
+            candidates: readCandidateViews(task.decisions[0].candidates),
+            estimateNote: ESTIMATE_NOTE,
+          }
+        : null,
     };
   });
 }

@@ -32,7 +32,7 @@ async function ActivityList() {
       {result.status === "ready" && result.data.length === 0 ? (
         <EmptyState
           title="No activity yet"
-          description="Creating a project writes the first audit entry. Model decisions, attempts, and verifications will be logged when those phases exist."
+          description="Creating a project writes the first audit entry. Choosing models adds a routing entry. Attempts and verifications are still not run."
         />
       ) : null}
       {result.status === "ready" && result.data.length > 0 ? (

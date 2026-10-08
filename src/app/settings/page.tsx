@@ -44,7 +44,7 @@ async function SettingsPanel() {
           : "Not connected";
 
   const rows = [
-    { label: "Phase", value: `${APP_PHASE}, project planner` },
+    { label: "Phase", value: `${APP_PHASE}, model routing` },
     { label: "Database", value: databaseLabel[settings.database] },
     { label: "GitHub", value: githubStatus },
     { label: "Log level", value: settings.logLevel },

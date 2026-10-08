@@ -108,3 +108,15 @@ export function labelTaskDifficulty(difficulty: string): string {
 export function labelOptimizationMode(mode: string): string {
   return optimizationModeLabel[mode.toLowerCase()] ?? mode;
 }
+
+const routingOutcomeLabel: Record<string, string> = {
+  selected: "Selected",
+  provider_unavailable: "Provider unavailable",
+  insufficient_capability: "Insufficient capability",
+  unpriced: "Price not configured",
+  below_threshold: "Below the quality floor",
+};
+
+export function labelRoutingOutcome(outcome: string): string {
+  return routingOutcomeLabel[outcome] ?? outcome;
+}

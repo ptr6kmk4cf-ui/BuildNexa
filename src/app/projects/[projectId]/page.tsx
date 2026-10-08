@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { excerpt, formatTimestamp, formatUsd } from "@/lib/format";
 import { labelBudgetPeriod, labelOptimizationMode, labelPullRequestStatus } from "@/lib/labels";
 import { AttachRepositoryForm } from "@/components/github/attach-repository-form";
+import { RouteTasksForm } from "@/components/projects/route-tasks-form";
 import { TaskGraph } from "@/components/projects/task-graph";
 import { githubNotice } from "@/lib/github/messages";
 import { listRepositoryOptions } from "@/server/github";
@@ -86,7 +87,14 @@ async function ProjectShell({ project }: { project: ProjectDetail }) {
           </p>
         ) : (
           <div className="mt-4">
-            <TaskGraph projectId={project.id} tasks={project.tasks} />
+            <TaskGraph
+              projectId={project.id}
+              tasks={project.tasks.map((task) => ({
+                ...task,
+                modelLabel: task.routing?.modelName ?? (task.routing ? "No model" : null),
+              }))}
+            />
+            <RouteTasksForm projectId={project.id} hasDecisions={project.tasks.some((task) => task.routing)} />
           </div>
         )}
       </section>

@@ -1,6 +1,6 @@
 # AI Project Optimizer
 
-Phase 4 adds a project planner. A goal, a budget, and an optimization mode become a task graph. The planner does not select a model, execute tasks, read the repository tree, or open a pull request.
+Phase 5 adds model routing. A goal still becomes a task graph, and each task then gets a model choice based on the expected cost of a successful result. Routing does not call a provider, execute the task, read the repository tree, or open a pull request.
 
 ## Architecture
 
@@ -13,6 +13,7 @@ src/app/api/health     process health, including database status
 src/app/api/github     OAuth start and callback. Tokens never reach the browser.
 src/server             request-time queries, plans, GitHub, and provider settings
 src/lib/planner        task graph, dependency checks, and context-request hints
+src/lib/routing        expected-cost model choice, history blend, and decision factors
 src/lib/ai             provider interface, adapters, registry, and cost calculation
 src/lib                env, validation, errors, logging, encryption, GitHub API client
 prisma                 schema and migrations
@@ -33,7 +34,9 @@ The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `Project
 
 The new-project screen collects the goal, a USD budget, and Savings, Balanced, or Quality. When GitHub is connected, the selected repository contributes its name, branch, visibility, and description. After the plan is saved, the project page shows the graph and each task can be opened on its own.
 
-`AIProvider` is the only execution surface. `OpenAIProvider`, `AnthropicProvider`, and `GeminiProvider` adapt vendor HTTP responses into that surface. There is no routing engine. Pages read the registry; they do not call `execute`.
+`AIProvider` is the only execution surface. `OpenAIProvider`, `AnthropicProvider`, and `GeminiProvider` adapt vendor HTTP responses into that surface. `routeTask` does not call `execute`.
+
+`routeTask` scores each available model for one task. Expected cost is the first run, plus estimated retries, escalation, context, and verification. Savings keeps a quality floor and then prefers the lower expected cost. Balanced does the same and penalizes very slow models. Quality raises the floor and, on important tasks, can pay more for a higher success estimate. Success probabilities are estimates from the configured 0–5 ratings, blended with `TaskAttempt` history when attempts exist. They are not a measured accuracy. A provider that is disabled or has no API key is unavailable. A model below the capability floor, without required tool support, or with no price is not selected. The decision stores the task, candidates, selected model, estimated cost, success estimate, concise factors, and optimization mode. No chain-of-thought is stored.
 
 The registry in `src/lib/ai/registry-data.ts` holds provider, model id, context window, tool support, streaming, and local 0–5 ratings for coding, reasoning, planning, debugging, research, speed, and reliability. Those ratings are workspace configuration, not vendor benchmarks. Prices are not included. Set `MODEL_PRICING` to a JSON object keyed by `provider:modelId` with `inputPerMillion`, `outputPerMillion`, and optional `cachedInputPerMillion`. Amounts are strings with up to six decimal places. Unknown keys are ignored, and a bad document does not crash the app.
 
@@ -118,7 +121,7 @@ npm start           # production server on port 43123
 
 ## Tests
 
-Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, model capabilities, simple and complex plans, invalid objectives, dependency links, cycle rejection, and task validation.
+Vitest covers database initialization, environment validation, validation utilities, redaction, the health route, GitHub OAuth (including cancelled and forged callbacks), repository retrieval, repository selection, user isolation, token encryption, disconnect, provider success and failure, timeouts, malformed responses, cost calculation, model capabilities, simple and complex plans, invalid objectives, dependency links, cycle rejection, task validation, and routing for simple coding, complex coding, documentation, testing, debugging, savings versus quality, an unavailable provider, and insufficient capability.
 
 ```bash
 npm test

@@ -13,6 +13,7 @@ import {
 import { parseInput, planProjectInputSchema } from "@/lib/validation";
 import { selectCurrentUsersRepository } from "@/server/github";
 import { savePlannedProject } from "@/server/plan";
+import { routeStoredProject } from "@/server/routing";
 
 function fieldErrorsFromDetails(details: unknown): PlanProjectFieldErrors {
   if (typeof details !== "object" || details === null || !("fieldErrors" in details)) return {};
@@ -93,6 +94,7 @@ export async function planProject(
         : {}),
     });
     if (!saved.ok) return planError(saved.message, {}, values);
+    await routeStoredProject(saved.id);
     redirect(`/projects/${saved.id}`);
   } catch (error) {
     unstable_rethrow(error);
