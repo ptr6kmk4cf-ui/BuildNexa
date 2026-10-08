@@ -17,7 +17,8 @@ const responseSchema = z.object({
   usage: z.object({
     input_tokens: z.number().int().nonnegative(),
     output_tokens: z.number().int().nonnegative(),
-    cache_read_input_tokens: z.number().int().nonnegative().optional(),
+    cache_creation_input_tokens: z.number().int().nonnegative().nullish(),
+    cache_read_input_tokens: z.number().int().nonnegative().nullish(),
   }),
 });
 
@@ -30,7 +31,7 @@ export function createAnthropicProvider(options: ProviderOptions): AIProvider {
     const messages = request.messages
       .filter((message) => message.role !== "system")
       .map((message) => ({ role: message.role, content: message.content }));
-    if (!startsWithUser(messages)) return { ok: false, error: "malformed" };
+    if (!alternatingUserConversation(messages)) return { ok: false, error: "malformed" };
 
     const response = await postJson({
       fetchImpl,
@@ -52,15 +53,22 @@ export function createAnthropicProvider(options: ProviderOptions): AIProvider {
   });
 }
 
-function startsWithUser(messages: ProviderMessage[]): boolean {
-  return messages.length > 0 && messages[0]?.role === "user";
+function alternatingUserConversation(messages: ProviderMessage[]): boolean {
+  if (messages.length === 0 || messages[0]?.role !== "user" || messages.at(-1)?.role !== "user") return false;
+  for (let index = 1; index < messages.length; index += 1) {
+    if (messages[index]?.role === messages[index - 1]?.role) return false;
+  }
+  return true;
 }
 
 function readAnthropicResponse(modelId: string, body: unknown): ExecuteResult {
   const parsed = responseSchema.safeParse(body);
   if (!parsed.success) return { ok: false, error: "malformed" };
+  // Cache reads and cache writes are billed apart from input_tokens, not inside it.
   const cachedInputTokens = parsed.data.usage.cache_read_input_tokens ?? 0;
-  if (cachedInputTokens > parsed.data.usage.input_tokens) return { ok: false, error: "malformed" };
+  const cacheWrites = parsed.data.usage.cache_creation_input_tokens ?? 0;
+  const inputTokens = addCounts(parsed.data.usage.input_tokens, cachedInputTokens, cacheWrites);
+  if (inputTokens === null) return { ok: false, error: "malformed" };
   const text = parsed.data.content
     .filter((block) => block.type === "text" && block.text)
     .map((block) => block.text)
@@ -71,9 +79,15 @@ function readAnthropicResponse(modelId: string, body: unknown): ExecuteResult {
     modelId,
     text,
     usage: {
-      inputTokens: parsed.data.usage.input_tokens,
+      inputTokens,
       outputTokens: parsed.data.usage.output_tokens,
       cachedInputTokens,
     },
   };
+}
+
+function addCounts(first: number, second: number, third: number): number | null {
+  const total = first + second + third;
+  if (!Number.isSafeInteger(total)) return null;
+  return total;
 }

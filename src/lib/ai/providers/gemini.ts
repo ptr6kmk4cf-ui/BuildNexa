@@ -8,7 +8,7 @@ const responseSchema = z.object({
     .array(
       z.object({
         content: z.object({
-          parts: z.array(z.object({ text: z.string().optional() })).min(1),
+          parts: z.array(z.object({ text: z.string().optional(), thought: z.boolean().optional() })).min(1),
         }),
       }),
     )
@@ -16,7 +16,8 @@ const responseSchema = z.object({
   usageMetadata: z.object({
     promptTokenCount: z.number().int().nonnegative(),
     candidatesTokenCount: z.number().int().nonnegative(),
-    cachedContentTokenCount: z.number().int().nonnegative().optional(),
+    thoughtsTokenCount: z.number().int().nonnegative().nullish(),
+    cachedContentTokenCount: z.number().int().nonnegative().nullish(),
   }),
 });
 
@@ -55,7 +56,14 @@ function readGeminiResponse(modelId: string, body: unknown): ExecuteResult {
   if (!parsed.success) return { ok: false, error: "malformed" };
   const cachedInputTokens = parsed.data.usageMetadata.cachedContentTokenCount ?? 0;
   if (cachedInputTokens > parsed.data.usageMetadata.promptTokenCount) return { ok: false, error: "malformed" };
+  const outputTokens = addCounts(
+    parsed.data.usageMetadata.candidatesTokenCount,
+    parsed.data.usageMetadata.thoughtsTokenCount ?? 0,
+  );
+  if (outputTokens === null) return { ok: false, error: "malformed" };
+  // Thought parts are hidden reasoning. Their tokens are already added to output above.
   const text = parsed.data.candidates[0]?.content.parts
+    .filter((part) => part.thought !== true)
     .map((part) => part.text ?? "")
     .join("");
   if (!text) return { ok: false, error: "malformed" };
@@ -65,8 +73,14 @@ function readGeminiResponse(modelId: string, body: unknown): ExecuteResult {
     text,
     usage: {
       inputTokens: parsed.data.usageMetadata.promptTokenCount,
-      outputTokens: parsed.data.usageMetadata.candidatesTokenCount,
+      outputTokens,
       cachedInputTokens,
     },
   };
+}
+
+function addCounts(first: number, second: number): number | null {
+  const total = first + second;
+  if (!Number.isSafeInteger(total)) return null;
+  return total;
 }

@@ -1,5 +1,6 @@
 "use server";
 
+import { refresh } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { parseEnabledProviders } from "@/lib/ai/catalog";
 import { logger } from "@/lib/logger";
@@ -20,6 +21,7 @@ export async function saveProviderPreferences(
     if (!enabled) return { message: "Choose only the listed providers.", saved: false };
     const saved = await saveProviderAvailability(enabled);
     if (!saved.ok) return { message: saved.message, saved: false };
+    refresh();
     return { message: "Provider availability saved. API keys stay on the server.", saved: true };
   } catch (error) {
     unstable_rethrow(error);

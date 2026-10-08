@@ -9,7 +9,6 @@ import { LOCAL_OPERATOR_EMAIL, LOCAL_OPERATOR_NAME } from "@/lib/constants";
 import { getPrisma } from "@/lib/db";
 import { getServerEnv, type ServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { currentGithubUserId } from "@/server/github";
 
 export async function loadAiCatalog(): Promise<{ status: "ready"; data: AiCatalog } | { status: "unavailable" }> {
   await io();
@@ -120,11 +119,8 @@ async function readPreferenceRows(prisma: PrismaClient) {
 }
 
 async function preferenceOwner(prisma: PrismaClient, create: boolean): Promise<{ id: string } | null> {
-  const sessionUserId = await currentGithubUserId();
-  if (sessionUserId) {
-    const sessionUser = await prisma.user.findUnique({ where: { id: sessionUserId }, select: { id: true } });
-    if (sessionUser) return sessionUser;
-  }
+  // Availability is a workspace choice. Keeping it on the local operator means
+  // connecting GitHub does not hide the providers that were already saved.
   if (!create) {
     return prisma.user.findUnique({ where: { email: LOCAL_OPERATOR_EMAIL }, select: { id: true } });
   }

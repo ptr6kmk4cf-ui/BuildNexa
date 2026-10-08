@@ -30,7 +30,7 @@ const adapters: Array<{
     header: "x-api-key",
     success: {
       content: [{ type: "text", text: "Ship the auth change." }],
-      usage: { input_tokens: 12, output_tokens: 7, cache_read_input_tokens: 3 },
+      usage: { input_tokens: 9, output_tokens: 7, cache_read_input_tokens: 3 },
     },
   },
   {
@@ -162,5 +162,70 @@ describe("provider adapters", () => {
       });
       expect(provider.estimateCost("missing", usage)).toEqual({ ok: false, error: "unknown_model" });
     }
+  });
+
+  it("treats Anthropic cache reads as tokens billed separately from input_tokens", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        content: [{ type: "text", text: "Use the cached prefix." }],
+        usage: {
+          input_tokens: 4,
+          output_tokens: 2,
+          cache_creation_input_tokens: 6,
+          cache_read_input_tokens: 20,
+        },
+      }),
+    );
+    const result = await providerFor("anthropic", fetchImpl).execute(request("claude-sonnet-4-5"));
+    expect(result).toEqual({
+      ok: true,
+      modelId: "claude-sonnet-4-5",
+      text: "Use the cached prefix.",
+      usage: { inputTokens: 30, outputTokens: 2, cachedInputTokens: 20 },
+    });
+  });
+
+  it("does not call Anthropic when the conversation roles do not alternate", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await providerFor("anthropic", fetchImpl).execute({
+      modelId: "claude-sonnet-4-5",
+      messages: [
+        { role: "user", content: "First question." },
+        { role: "user", content: "Second question." },
+      ],
+    });
+    expect(result).toEqual({ ok: false, error: "malformed" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps Gemini thought text out of the answer and bills those tokens as output", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        candidates: [
+          {
+            content: {
+              parts: [
+                { thought: true, text: "Private reasoning." },
+                { text: "Ship the auth change." },
+              ],
+            },
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 12,
+          candidatesTokenCount: 7,
+          thoughtsTokenCount: 5,
+          cachedContentTokenCount: 3,
+        },
+      }),
+    );
+    const result = await providerFor("gemini", fetchImpl).execute(request("gemini-2.5-pro"));
+    expect(result).toEqual({
+      ok: true,
+      modelId: "gemini-2.5-pro",
+      text: "Ship the auth change.",
+      usage: { inputTokens: 12, outputTokens: 12, cachedInputTokens: 3 },
+    });
+    expect(JSON.stringify(result)).not.toContain("Private reasoning");
   });
 });
