@@ -26,7 +26,6 @@ export const serverEnvSchema = z.object({
   ANTHROPIC_API_KEY: optionalEnvString,
   GEMINI_API_KEY: optionalEnvString,
   MISTRAL_API_KEY: optionalEnvString,
-  GROQ_API_KEY: optionalEnvString,
   DEEPSEEK_API_KEY: optionalEnvString,
   XAI_API_KEY: optionalEnvString,
   MODEL_PRICING: optionalEnvString,
@@ -69,7 +68,6 @@ export function parseServerEnv(source: {
   ANTHROPIC_API_KEY?: string | undefined;
   GEMINI_API_KEY?: string | undefined;
   MISTRAL_API_KEY?: string | undefined;
-  GROQ_API_KEY?: string | undefined;
   DEEPSEEK_API_KEY?: string | undefined;
   XAI_API_KEY?: string | undefined;
   MODEL_PRICING?: string | undefined;
@@ -87,7 +85,6 @@ export function parseServerEnv(source: {
     ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY,
     GEMINI_API_KEY: source.GEMINI_API_KEY,
     MISTRAL_API_KEY: source.MISTRAL_API_KEY,
-    GROQ_API_KEY: source.GROQ_API_KEY,
     DEEPSEEK_API_KEY: source.DEEPSEEK_API_KEY,
     XAI_API_KEY: source.XAI_API_KEY,
     MODEL_PRICING: source.MODEL_PRICING,

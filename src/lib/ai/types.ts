@@ -1,4 +1,4 @@
-export const PROVIDER_IDS = ["openai", "anthropic", "gemini", "mistral", "groq", "deepseek", "xai"] as const;
+export const PROVIDER_IDS = ["openai", "anthropic", "gemini", "mistral", "deepseek", "xai"] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
@@ -97,9 +97,8 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   anthropic: "Anthropic",
   gemini: "Gemini",
   mistral: "Mistral",
-  groq: "Groq",
   deepseek: "DeepSeek",
-  xai: "xAI",
+  xai: "Grok",
 };
 
 export function providerLabel(id: ProviderId): string {

@@ -115,7 +115,6 @@ function keysFrom(env: ServerEnv): Record<ProviderId, string | undefined> {
     anthropic: env.ANTHROPIC_API_KEY,
     gemini: env.GEMINI_API_KEY,
     mistral: env.MISTRAL_API_KEY,
-    groq: env.GROQ_API_KEY,
     deepseek: env.DEEPSEEK_API_KEY,
     xai: env.XAI_API_KEY,
   };

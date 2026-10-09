@@ -13,7 +13,6 @@ type ProviderKeyEnv = Pick<
   | "ANTHROPIC_API_KEY"
   | "GEMINI_API_KEY"
   | "MISTRAL_API_KEY"
-  | "GROQ_API_KEY"
   | "DEEPSEEK_API_KEY"
   | "XAI_API_KEY"
 >;
@@ -26,7 +25,6 @@ export function localModelEnabled(env: ProviderKeyEnv): boolean {
     !env.ANTHROPIC_API_KEY &&
     !env.GEMINI_API_KEY &&
     !env.MISTRAL_API_KEY &&
-    !env.GROQ_API_KEY &&
     !env.DEEPSEEK_API_KEY &&
     !env.XAI_API_KEY
   );
@@ -38,7 +36,6 @@ export function providerKeysForRun(env: ProviderKeyEnv): Record<ProviderId, stri
     anthropic: env.ANTHROPIC_API_KEY,
     gemini: env.GEMINI_API_KEY,
     mistral: env.MISTRAL_API_KEY,
-    groq: env.GROQ_API_KEY,
     deepseek: env.DEEPSEEK_API_KEY,
     xai: env.XAI_API_KEY,
   };

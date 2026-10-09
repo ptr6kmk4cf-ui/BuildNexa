@@ -54,16 +54,6 @@ const adapters: Array<{
     },
   },
   {
-    id: "groq",
-    modelId: "llama-3.3-70b-versatile",
-    url: "https://api.groq.com/openai/v1/chat/completions",
-    header: "authorization",
-    success: {
-      choices: [{ message: { content: "Ship the auth change." } }],
-      usage: { prompt_tokens: 12, completion_tokens: 7, prompt_tokens_details: { cached_tokens: 3 } },
-    },
-  },
-  {
     id: "deepseek",
     modelId: "deepseek-v4-pro",
     url: "https://api.deepseek.com/chat/completions",

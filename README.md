@@ -45,7 +45,7 @@ The data model is `User`, `Project`, `Repository`, `Provider`, `Model`, `Project
 
 The new-project screen collects the goal, a USD budget, and Savings, Balanced, or Quality. When GitHub is connected, the selected repository contributes its name, branch, visibility, and description. After the plan is saved, the project page shows the graph and each task can be opened on its own.
 
-`AIProvider` is the only model-call surface. OpenAI, Anthropic, Gemini, Mistral, Groq, DeepSeek, and xAI each adapt that vendor's HTTP response into the same surface. `routeTask` does not call `execute`. `runExecution` does, through a controlled environment that has no shell and no repository writes.
+`AIProvider` is the only model-call surface. OpenAI, Anthropic, Gemini, Mistral, DeepSeek, and Grok each adapt that vendor's HTTP response into the same surface. Grok uses the xAI API. `routeTask` does not call `execute`. `runExecution` does, through a controlled environment that has no shell and no repository writes.
 
 `runExecution` queues every task, starts work whose dependencies are complete, and keeps a small concurrency limit. A provider error is retried. A call that misses its deadline fails that attempt. Cancellation stops the running call and leaves later tasks unstarted. When verification is attached, a stored reply is not success until the checks pass. The first failed check retries the same model with that failure in the prompt. A later failure asks `routeTask` for a different model, leaving out models that already failed this task, and continues only when the success estimate improves enough and the expected cost stays within the budget and the cost ceiling. A timeout or connection error uses that same limit. A missing API key does not retry that model. With no different model, the same model can be tried again until `VERIFICATION_CONFIG.maxAttempts`. Cancellation stops a running check. The task page shows each check command, output, exit code, duration, and errors.
 
@@ -57,7 +57,7 @@ The new-project screen collects the goal, a USD budget, and Savings, Balanced, o
 
 The registry in `src/lib/ai/registry-data.ts` holds provider, model id, context window, tool support, streaming, and local 0–5 ratings for coding, reasoning, planning, debugging, research, speed, and reliability. Those ratings are workspace configuration, not vendor benchmarks. Prices are not included. Set `MODEL_PRICING` to a JSON object keyed by `provider:modelId` with `inputPerMillion`, `outputPerMillion`, and optional `cachedInputPerMillion`. Amounts are strings with up to six decimal places. Unknown keys are ignored, and a bad document does not crash the app.
 
-Provider API keys are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, and `XAI_API_KEY`. They stay in the server environment. Settings can enable or disable a provider for the signed-in user, or the local operator when no GitHub session exists. The form reports whether a key is present and never renders the value. Saving that choice requires PostgreSQL.
+Provider API keys are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, and `XAI_API_KEY` for Grok. They stay in the server environment. Settings can enable or disable a provider for the signed-in user, or the local operator when no GitHub session exists. The form reports whether a key is present and never renders the value. Saving that choice requires PostgreSQL.
 
 GitHub access tokens are encrypted with AES-256-GCM before they are written. Queries that render pages select the public account fields only. The first successful connection attaches to the local operator (`local-operator@localhost.invalid`) when that record has no GitHub account yet. A second GitHub account gets its own user. Repository lists and selection are filtered by that user, including when a store returns another user's row.
 
@@ -94,9 +94,8 @@ Copy `.env.example` to `.env`. Do not commit `.env`.
 | `ANTHROPIC_API_KEY` | No | Server-only Anthropic key. Omit it to leave Anthropic unconfigured. |
 | `GEMINI_API_KEY` | No | Server-only Gemini key. Omit it to leave Gemini unconfigured. |
 | `MISTRAL_API_KEY` | No | Server-only Mistral key. Omit it to leave Mistral unconfigured. |
-| `GROQ_API_KEY` | No | Server-only Groq key. Omit it to leave Groq unconfigured. |
 | `DEEPSEEK_API_KEY` | No | Server-only DeepSeek key. Omit it to leave DeepSeek unconfigured. |
-| `XAI_API_KEY` | No | Server-only xAI key. Omit it to leave xAI unconfigured. |
+| `XAI_API_KEY` | No | Server-only Grok key for the xAI API. Omit it to leave Grok unconfigured. |
 | `MODEL_PRICING` | No | JSON per-million USD prices for registry models. Omit it to leave every model unpriced. |
 
 `NODE_ENV` is set by Next.js. Do not put secrets in `NEXT_PUBLIC_*` variables. This app does not define any.

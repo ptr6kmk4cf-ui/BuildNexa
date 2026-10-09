@@ -56,7 +56,6 @@ describe("model registry", () => {
         anthropic: " ",
         gemini: undefined,
         mistral: undefined,
-        groq: undefined,
         deepseek: undefined,
         xai: undefined,
       },
@@ -73,6 +72,7 @@ describe("model registry", () => {
     });
     expect(catalog.providers.find((provider) => provider.id === "anthropic")?.keyConfigured).toBe(false);
     expect(catalog.providers.find((provider) => provider.id === "gemini")?.enabled).toBe(true);
+    expect(catalog.providers.find((provider) => provider.id === "xai")?.name).toBe("Grok");
     expect(catalog.providers.find((provider) => provider.id === "mistral")).toMatchObject({
       keyConfigured: false,
       enabled: false,
@@ -83,7 +83,6 @@ describe("model registry", () => {
       "anthropic",
       "gemini",
       "mistral",
-      "groq",
       "deepseek",
       "xai",
     ]);

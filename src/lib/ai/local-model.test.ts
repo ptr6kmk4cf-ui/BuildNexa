@@ -6,7 +6,6 @@ const empty = {
   ANTHROPIC_API_KEY: undefined,
   GEMINI_API_KEY: undefined,
   MISTRAL_API_KEY: undefined,
-  GROQ_API_KEY: undefined,
   DEEPSEEK_API_KEY: undefined,
   XAI_API_KEY: undefined,
 };
