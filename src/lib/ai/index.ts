@@ -1,7 +1,11 @@
 import { modelsForProvider } from "@/lib/ai/registry";
 import { createAnthropicProvider } from "@/lib/ai/providers/anthropic";
+import { createDeepSeekProvider } from "@/lib/ai/providers/deepseek";
 import { createGeminiProvider } from "@/lib/ai/providers/gemini";
+import { createGroqProvider } from "@/lib/ai/providers/groq";
+import { createMistralProvider } from "@/lib/ai/providers/mistral";
 import { createOpenAIProvider } from "@/lib/ai/providers/openai";
+import { createXAIProvider } from "@/lib/ai/providers/xai";
 import type { AIProvider, ProviderId } from "@/lib/ai/types";
 
 export type AIProviderFactoryOptions = {
@@ -19,7 +23,20 @@ export function createAIProvider(id: ProviderId, options: AIProviderFactoryOptio
     fetch: options.fetch,
     timeoutMs: options.timeoutMs,
   };
-  if (id === "openai") return createOpenAIProvider(providerOptions);
-  if (id === "anthropic") return createAnthropicProvider(providerOptions);
-  return createGeminiProvider(providerOptions);
+  switch (id) {
+    case "openai":
+      return createOpenAIProvider(providerOptions);
+    case "anthropic":
+      return createAnthropicProvider(providerOptions);
+    case "gemini":
+      return createGeminiProvider(providerOptions);
+    case "mistral":
+      return createMistralProvider(providerOptions);
+    case "groq":
+      return createGroqProvider(providerOptions);
+    case "deepseek":
+      return createDeepSeekProvider(providerOptions);
+    case "xai":
+      return createXAIProvider(providerOptions);
+  }
 }

@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { localModelEnabled, localModelResult, providerKeysForRun } from "@/lib/ai/local-model";
 
-const empty = { OPENAI_API_KEY: undefined, ANTHROPIC_API_KEY: undefined, GEMINI_API_KEY: undefined };
+const empty = {
+  OPENAI_API_KEY: undefined,
+  ANTHROPIC_API_KEY: undefined,
+  GEMINI_API_KEY: undefined,
+  MISTRAL_API_KEY: undefined,
+  GROQ_API_KEY: undefined,
+  DEEPSEEK_API_KEY: undefined,
+  XAI_API_KEY: undefined,
+};
 
 afterEach(() => {
   delete process.env.LOCAL_MODEL;
@@ -12,6 +20,7 @@ describe("local model", () => {
     process.env.LOCAL_MODEL = "1";
     expect(localModelEnabled({ NODE_ENV: "production", ...empty })).toBe(false);
     expect(localModelEnabled({ NODE_ENV: "development", ...empty, OPENAI_API_KEY: "sk-real" })).toBe(false);
+    expect(localModelEnabled({ NODE_ENV: "development", ...empty, MISTRAL_API_KEY: "mistral-real" })).toBe(false);
     expect(providerKeysForRun({ NODE_ENV: "production", ...empty }).openai).toBeUndefined();
   });
 

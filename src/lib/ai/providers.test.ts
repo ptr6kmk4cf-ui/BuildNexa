@@ -43,6 +43,46 @@ const adapters: Array<{
       usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 7, cachedContentTokenCount: 3 },
     },
   },
+  {
+    id: "mistral",
+    modelId: "mistral-medium-3-5",
+    url: "https://api.mistral.ai/v1/chat/completions",
+    header: "authorization",
+    success: {
+      choices: [{ message: { content: "Ship the auth change." } }],
+      usage: { prompt_tokens: 12, completion_tokens: 7, prompt_tokens_details: { cached_tokens: 3 } },
+    },
+  },
+  {
+    id: "groq",
+    modelId: "llama-3.3-70b-versatile",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    header: "authorization",
+    success: {
+      choices: [{ message: { content: "Ship the auth change." } }],
+      usage: { prompt_tokens: 12, completion_tokens: 7, prompt_tokens_details: { cached_tokens: 3 } },
+    },
+  },
+  {
+    id: "deepseek",
+    modelId: "deepseek-v4-pro",
+    url: "https://api.deepseek.com/chat/completions",
+    header: "authorization",
+    success: {
+      choices: [{ message: { content: "Ship the auth change." } }],
+      usage: { prompt_tokens: 12, completion_tokens: 7, prompt_cache_hit_tokens: 3 },
+    },
+  },
+  {
+    id: "xai",
+    modelId: "grok-4.7",
+    url: "https://api.x.ai/v1/chat/completions",
+    header: "authorization",
+    success: {
+      choices: [{ message: { content: "Ship the auth change." } }],
+      usage: { prompt_tokens: 12, completion_tokens: 7, prompt_tokens_details: { cached_tokens: 3 } },
+    },
+  },
 ];
 
 function providerFor(

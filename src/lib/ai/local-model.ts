@@ -6,19 +6,41 @@ import type { ServerEnv } from "@/lib/env";
 
 const USAGE: TokenCounts = { inputTokens: 12, outputTokens: 24, cachedInputTokens: 0 };
 
-export function localModelEnabled(env: Pick<ServerEnv, "NODE_ENV" | "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GEMINI_API_KEY">): boolean {
+type ProviderKeyEnv = Pick<
+  ServerEnv,
+  | "NODE_ENV"
+  | "OPENAI_API_KEY"
+  | "ANTHROPIC_API_KEY"
+  | "GEMINI_API_KEY"
+  | "MISTRAL_API_KEY"
+  | "GROQ_API_KEY"
+  | "DEEPSEEK_API_KEY"
+  | "XAI_API_KEY"
+>;
+
+export function localModelEnabled(env: ProviderKeyEnv): boolean {
   if (env.NODE_ENV === "production") return false;
   if (process.env.LOCAL_MODEL !== "1") return false;
-  return !env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY && !env.GEMINI_API_KEY;
+  return (
+    !env.OPENAI_API_KEY &&
+    !env.ANTHROPIC_API_KEY &&
+    !env.GEMINI_API_KEY &&
+    !env.MISTRAL_API_KEY &&
+    !env.GROQ_API_KEY &&
+    !env.DEEPSEEK_API_KEY &&
+    !env.XAI_API_KEY
+  );
 }
 
-export function providerKeysForRun(
-  env: Pick<ServerEnv, "NODE_ENV" | "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GEMINI_API_KEY">,
-): Record<ProviderId, string | undefined> {
+export function providerKeysForRun(env: ProviderKeyEnv): Record<ProviderId, string | undefined> {
   return {
     openai: localModelEnabled(env) ? "local" : env.OPENAI_API_KEY,
     anthropic: env.ANTHROPIC_API_KEY,
     gemini: env.GEMINI_API_KEY,
+    mistral: env.MISTRAL_API_KEY,
+    groq: env.GROQ_API_KEY,
+    deepseek: env.DEEPSEEK_API_KEY,
+    xai: env.XAI_API_KEY,
   };
 }
 

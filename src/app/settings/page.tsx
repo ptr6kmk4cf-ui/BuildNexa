@@ -88,8 +88,9 @@ async function SettingsPanel() {
         <CardHeader>
           <CardTitle>Model providers</CardTitle>
           <CardDescription>
-            Choose which providers this workspace may use later. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, and
-            GEMINI_API_KEY in the server environment. Keys are never shown or accepted here.
+            Choose which providers this workspace may use later. Set OPENAI_API_KEY, ANTHROPIC_API_KEY,
+            GEMINI_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, and XAI_API_KEY in the server
+            environment. Keys are never shown or accepted here.
           </CardDescription>
         </CardHeader>
         <CardContent>

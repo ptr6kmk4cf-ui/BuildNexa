@@ -51,7 +51,15 @@ describe("model registry", () => {
   it("keeps API keys out of the settings catalog", () => {
     const catalog = assembleCatalog({
       databaseConfigured: true,
-      keys: { openai: secret, anthropic: " ", gemini: undefined },
+      keys: {
+        openai: secret,
+        anthropic: " ",
+        gemini: undefined,
+        mistral: undefined,
+        groq: undefined,
+        deepseek: undefined,
+        xai: undefined,
+      },
       preferenceRows: [
         { provider: "openai", enabled: true },
         { provider: "anthropic", enabled: false },
@@ -65,6 +73,20 @@ describe("model registry", () => {
     });
     expect(catalog.providers.find((provider) => provider.id === "anthropic")?.keyConfigured).toBe(false);
     expect(catalog.providers.find((provider) => provider.id === "gemini")?.enabled).toBe(true);
+    expect(catalog.providers.find((provider) => provider.id === "mistral")).toMatchObject({
+      keyConfigured: false,
+      enabled: false,
+      modelCount: 2,
+    });
+    expect(catalog.providers.map((provider) => provider.id)).toEqual([
+      "openai",
+      "anthropic",
+      "gemini",
+      "mistral",
+      "groq",
+      "deepseek",
+      "xai",
+    ]);
   });
 
   it("treats a missing preference row as enabled and a saved empty set as disabled", () => {

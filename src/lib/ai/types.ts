@@ -1,4 +1,4 @@
-export const PROVIDER_IDS = ["openai", "anthropic", "gemini"] as const;
+export const PROVIDER_IDS = ["openai", "anthropic", "gemini", "mistral", "groq", "deepseek", "xai"] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
@@ -92,10 +92,18 @@ export function isProviderId(value: string): value is ProviderId {
   return (PROVIDER_IDS as readonly string[]).includes(value);
 }
 
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Gemini",
+  mistral: "Mistral",
+  groq: "Groq",
+  deepseek: "DeepSeek",
+  xai: "xAI",
+};
+
 export function providerLabel(id: ProviderId): string {
-  if (id === "openai") return "OpenAI";
-  if (id === "anthropic") return "Anthropic";
-  return "Gemini";
+  return PROVIDER_LABELS[id];
 }
 
 export function capabilitiesOf(model: RegistryModel): ModelCapabilities {

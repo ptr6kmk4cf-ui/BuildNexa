@@ -21,6 +21,10 @@ Copy `.env.example` to the host environment. Do not bake a `.env` file into the 
 | `OPENAI_API_KEY` | Optional. Omit to leave OpenAI unconfigured. |
 | `ANTHROPIC_API_KEY` | Optional. Omit to leave Anthropic unconfigured. |
 | `GEMINI_API_KEY` | Optional. Omit to leave Gemini unconfigured. |
+| `MISTRAL_API_KEY` | Optional. Omit to leave Mistral unconfigured. |
+| `GROQ_API_KEY` | Optional. Omit to leave Groq unconfigured. |
+| `DEEPSEEK_API_KEY` | Optional. Omit to leave DeepSeek unconfigured. |
+| `XAI_API_KEY` | Optional. Omit to leave xAI unconfigured. |
 | `MODEL_PRICING` | Optional JSON. Omit to leave models unpriced, which keeps them from being selected. |
 
 No `NEXT_PUBLIC_` variable carries a secret. The browser never receives a provider key or a GitHub token.
